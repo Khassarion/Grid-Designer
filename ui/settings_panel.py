@@ -102,10 +102,7 @@ class SettingsPanel(QWidget):
             self.gap_spin,
             self.padding_spin,
         ):
-            if isinstance(widget, QDoubleSpinBox):
-                widget.valueChanged.connect(self._emit_settings_changed)
-            else:
-                widget.valueChanged.connect(self._emit_settings_changed)
+            widget.valueChanged.connect(self._emit_settings_changed)
 
         form.addRow("시작 X", self.start_x)
         form.addRow("시작 Y", self.start_y)

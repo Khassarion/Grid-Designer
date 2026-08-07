@@ -8,7 +8,6 @@ import obsws_python as obs
 
 from models.source_item import SourceItem, TransformSnapshot
 
-# Source kinds eligible for grid placement.
 SUPPORTED_INPUT_KINDS: frozenset[str] = frozenset(
     {
         "image_source",
@@ -39,22 +38,17 @@ class ObsClient:
         return self._client is not None
 
     def connect(self, host: str = "localhost", port: int = 4455, password: str = "") -> None:
-        """Connect to the OBS WebSocket server.
-
-        Raises:
-            ObsClientError: If the connection cannot be established.
-        """
+        """Connect to the OBS WebSocket server."""
         self.disconnect()
         try:
             kwargs: dict[str, Any] = {"host": host, "port": port, "timeout": 5}
             if password:
                 kwargs["password"] = password
             self._client = obs.ReqClient(**kwargs)
-            # Probe connectivity with a lightweight request.
             self._client.get_version()
             self._host = host
             self._port = port
-        except Exception as exc:  # noqa: BLE001 - surface any WS/auth failure
+        except Exception as exc:  # noqa: BLE001
             self._client = None
             raise ObsClientError(f"OBS 연결 실패 ({host}:{port}): {exc}") from exc
 
@@ -64,7 +58,7 @@ class ObsClient:
             return
         try:
             self._client.base_client.ws.close()
-        except Exception:  # noqa: BLE001 - best-effort close
+        except Exception:  # noqa: BLE001
             pass
         finally:
             self._client = None
@@ -93,10 +87,7 @@ class ObsClient:
             raise ObsClientError(f"캔버스 크기를 가져오지 못했습니다: {exc}") from exc
 
     def get_layout_sources(self, scene_name: str | None = None) -> tuple[str, list[SourceItem]]:
-        """Load the current (or given) scene and return eligible sources.
-
-        Sources are sorted by name (ascending).
-        """
+        """Load the current (or given) scene and return eligible sources sorted by name."""
         client = self._require_client()
         try:
             if not scene_name:
@@ -128,7 +119,6 @@ class ObsClient:
                 if not source_name:
                     continue
 
-                # Scene item list may omit inputKind; resolve via GetInputSettings / GetInputKind.
                 if not input_kind or input_kind not in SUPPORTED_INPUT_KINDS:
                     input_kind = self._resolve_input_kind(source_name)
 
@@ -164,7 +154,6 @@ class ObsClient:
         except Exception:  # noqa: BLE001
             pass
 
-        # Fallback: scan all inputs.
         try:
             resp = client.get_input_list()
             for entry in getattr(resp, "inputs", []) or []:
@@ -188,7 +177,6 @@ class ObsClient:
             transform = getattr(resp, "scene_item_transform", None)
             if isinstance(transform, dict):
                 return dict(transform)
-            # Convert response object attributes if needed.
             if transform is not None:
                 return {
                     key: getattr(transform, key)
@@ -239,7 +227,6 @@ class ObsClient:
             try:
                 client.set_scene_item_transform(scene_name, source.scene_item_id, transform)
             except Exception as exc:  # noqa: BLE001
-                # Retry with snake_case keys used by some obsws-python versions.
                 try:
                     client.set_scene_item_transform(
                         scene_name,
@@ -289,7 +276,6 @@ class ObsClient:
             "cropRight",
             "cropTop",
             "cropBottom",
-            # snake_case variants
             "position_x",
             "position_y",
             "scale_x",

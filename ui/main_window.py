@@ -59,11 +59,9 @@ class MainWindow(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         root.addWidget(splitter)
 
-        # Left: settings
         self._settings = SettingsPanel()
         splitter.addWidget(self._settings)
 
-        # Center: sources
         sources_panel = QWidget()
         sources_layout = QVBoxLayout(sources_panel)
         self._scene_label = QLabel("장면: (없음)")
@@ -89,7 +87,6 @@ class MainWindow(QWidget):
         sources_layout.addWidget(hint)
         splitter.addWidget(sources_panel)
 
-        # Right: preview
         preview_panel = QWidget()
         preview_layout = QVBoxLayout(preview_panel)
         preview_layout.addWidget(QLabel("미리보기"))
@@ -117,10 +114,6 @@ class MainWindow(QWidget):
         s.use_canvas_size_requested.connect(self._use_obs_canvas)
         s.use_monitor_size_requested.connect(self._use_monitor)
         self._preview.order_changed.connect(self._reorder_sources)
-
-    # ------------------------------------------------------------------
-    # OBS connection / scene
-    # ------------------------------------------------------------------
 
     def _connect_obs(self) -> None:
         host, port, password = self._settings.connection_params()
@@ -194,12 +187,7 @@ class MainWindow(QWidget):
         self._select_all.blockSignals(False)
 
     def _selected_sources(self) -> list[SourceItem]:
-        """Return sources marked for placement, preserving current order."""
         return [s for s in self._sources if s.selected]
-
-    # ------------------------------------------------------------------
-    # Preview / reorder
-    # ------------------------------------------------------------------
 
     def _refresh_preview(self) -> None:
         settings = self._settings.get_settings()
@@ -215,8 +203,6 @@ class MainWindow(QWidget):
         selected.pop(from_index)
         selected.insert(to_index, moving)
 
-        # Rebuild full source order: selected (new order) first among their slots,
-        # keeping unselected sources in relative positions.
         selected_ids = {s.scene_item_id for s in selected}
         selected_iter = iter(selected)
         new_order: list[SourceItem] = []
@@ -230,10 +216,6 @@ class MainWindow(QWidget):
             source.index = index
         self._rebuild_source_list()
         self._refresh_preview()
-
-    # ------------------------------------------------------------------
-    # Apply / Undo
-    # ------------------------------------------------------------------
 
     def _apply_layout(self) -> None:
         if not self._obs.is_connected:
@@ -283,10 +265,6 @@ class MainWindow(QWidget):
             QMessageBox.critical(self, "Undo 실패", str(exc))
         finally:
             self._settings.set_undo_enabled(bool(self._undo_stack))
-
-    # ------------------------------------------------------------------
-    # JSON / presets
-    # ------------------------------------------------------------------
 
     def _save_json(self) -> None:
         path_str, _ = QFileDialog.getSaveFileName(
@@ -376,10 +354,6 @@ class MainWindow(QWidget):
             QMessageBox.information(self, "프리셋", f"'{name}' 프리셋을 삭제했습니다.")
         except PersistenceError as exc:
             QMessageBox.critical(self, "프리셋 삭제 실패", str(exc))
-
-    # ------------------------------------------------------------------
-    # Canvas / monitors
-    # ------------------------------------------------------------------
 
     def _use_obs_canvas(self) -> None:
         if not self._obs.is_connected:

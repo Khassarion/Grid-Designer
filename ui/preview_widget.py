@@ -70,7 +70,6 @@ class PreviewWidget(QWidget):
 
     def _cell_rect_widget(self, cell: GridCell) -> QRectF:
         scale, ox, oy, _ = self._scene_to_widget()
-        # Cells are absolute in OBS space; area starts at start_x/start_y.
         local_x = cell.x - self._settings.start_x
         local_y = cell.y - self._settings.start_y
         return QRectF(
@@ -86,7 +85,7 @@ class PreviewWidget(QWidget):
                 return cell.index
         return None
 
-    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def paintEvent(self, event) -> None:  # noqa: N802
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -94,12 +93,10 @@ class PreviewWidget(QWidget):
         scale, ox, oy, _ = self._scene_to_widget()
         area = QRectF(ox, oy, self._settings.width * scale, self._settings.height * scale)
 
-        # Outer placement area
         painter.fillRect(area, QColor("#2b2b2b"))
         painter.setPen(QPen(QColor("#6aa9ff"), 2))
         painter.drawRect(area)
 
-        # Padding guide
         pad = self._settings.padding * scale
         if pad > 0 and area.width() > pad * 2 and area.height() > pad * 2:
             inner = area.adjusted(pad, pad, -pad, -pad)
@@ -132,17 +129,20 @@ class PreviewWidget(QWidget):
             painter.setPen(QColor("#ffffff"))
             painter.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), label)
 
-        # Floating drag ghost
         if self._drag_index is not None and 0 <= self._drag_index < len(self._cells):
             cell = self._cells[self._drag_index]
-            ghost = QRectF(0, 0, max(40.0, cell.width * scale * 0.8), max(28.0, cell.height * scale * 0.8))
+            ghost = QRectF(
+                0,
+                0,
+                max(40.0, cell.width * scale * 0.8),
+                max(28.0, cell.height * scale * 0.8),
+            )
             ghost.moveCenter(self._drag_pos)
             painter.fillRect(ghost, QColor(152, 193, 217, 160))
             painter.setPen(QPen(QColor("#ffffff"), 1))
             painter.drawRect(ghost)
             painter.drawText(ghost, int(Qt.AlignmentFlag.AlignCenter), str(cell.index + 1))
 
-        # Legend
         painter.setPen(QColor("#bbbbbb"))
         meta = (
             f"{self._item_count} items  |  "
