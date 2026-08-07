@@ -8,7 +8,7 @@ OBS에서 이미지들을 그리드로 배치하는 정적 웹 디자이너입�
 
 ## 사용법
 
-`web/index.html`을 브라우저로 열면 됩니다. **로컬 웹 서버 불필요**.
+`index.html`을 브라우저로 열면 됩니다. **로컬 웹 서버 불필요**. GitHub Pages는 저장소 루트에서 배포하면 됩니다.
 
 ### 개념
 
@@ -89,9 +89,8 @@ OBS에서 이미지들을 그리드로 배치하는 정적 웹 디자이너입�
 ## 구조
 
 ```
-web/                     # 정적 디자이너 (HTML/JS)
-  index.html
-  styles.css
-  js/grid.js             # 격자 계산
-  js/app.js              # 편집기
+index.html
+styles.css
+js/grid.js               # 격자 계산
+js/app.js                # 편집기
 ```
