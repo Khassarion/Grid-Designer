@@ -823,6 +823,223 @@
     }, "image/png");
   }
 
+  var PROJECT_KIND = "obs-grid-designer";
+  var PROJECT_VERSION = 1;
+
+  function cloneLayoutsMap(src) {
+    var out = {};
+    Object.keys(src).forEach(function (id) {
+      var L = src[id];
+      out[id] = {
+        id: L.id,
+        name: L.name,
+        parentId: L.parentId,
+        settings: Object.assign({}, L.settings),
+        transparentBg: L.transparentBg !== false,
+        bgColor: L.bgColor || "#000000",
+        children: (L.children || []).map(function (ch) {
+          return {
+            type: ch.type,
+            refId: ch.refId,
+            frame: ch.frame ? Object.assign({}, ch.frame) : null,
+          };
+        }),
+      };
+    });
+    return out;
+  }
+
+  function imageToDataUrl(entry) {
+    if (entry.file) {
+      return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () { resolve(reader.result); };
+        reader.onerror = function () { reject(reader.error || new Error("이미지 읽기 실패")); };
+        reader.readAsDataURL(entry.file);
+      });
+    }
+    return new Promise(function (resolve, reject) {
+      var im = entry.img;
+      if (!im) return reject(new Error("이미지 없음"));
+      var c = document.createElement("canvas");
+      c.width = im.naturalWidth || 1;
+      c.height = im.naturalHeight || 1;
+      try {
+        c.getContext("2d").drawImage(im, 0, 0);
+        resolve(c.toDataURL("image/png"));
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  function clearProjectState() {
+    Object.keys(images).forEach(function (id) {
+      var entry = images[id];
+      if (entry && entry.url && entry.url.indexOf("blob:") === 0) {
+        try { URL.revokeObjectURL(entry.url); } catch (e) { /* ignore */ }
+      }
+    });
+    images = {};
+    layouts = {};
+    canvasId = null;
+    activeId = null;
+    selectedChild = -1;
+    previewSel = { parentId: null, index: -1 };
+    childDrag = -1;
+    maxZ = 1;
+  }
+
+  function collectUsedImageIds(rootId) {
+    var used = {};
+    function walk(id) {
+      var L = layouts[id];
+      if (!L) return;
+      (L.children || []).forEach(function (ch) {
+        if (ch.type === "image" && ch.refId) used[ch.refId] = true;
+        else if (ch.type === "layout" && ch.refId) walk(ch.refId);
+      });
+    }
+    walk(rootId);
+    return Object.keys(used);
+  }
+
+  function buildProject() {
+    writeForm();
+    var ids = collectUsedImageIds(canvasId);
+    var chain = Promise.resolve();
+    var imagePayload = {};
+    ids.forEach(function (id) {
+      chain = chain.then(function () {
+        var entry = images[id];
+        if (!entry) return;
+        return imageToDataUrl(entry).then(function (dataUrl) {
+          imagePayload[id] = { id: id, name: entry.name || id, dataUrl: dataUrl };
+        });
+      });
+    });
+    return chain.then(function () {
+      return {
+        kind: PROJECT_KIND,
+        version: PROJECT_VERSION,
+        canvasId: canvasId,
+        maxZ: maxZ,
+        layouts: cloneLayoutsMap(layouts),
+        images: imagePayload,
+      };
+    });
+  }
+
+  function downloadJson(obj, filename) {
+    var blob = new Blob([JSON.stringify(obj)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename || "obs-grid-project.json";
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  }
+
+  function validateProject(data) {
+    if (!data || typeof data !== "object") throw new Error("잘못된 파일입니다.");
+    if (data.kind !== PROJECT_KIND) throw new Error("OBS Grid Designer 구조 파일이 아닙니다.");
+    if (+data.version !== PROJECT_VERSION) throw new Error("지원하지 않는 구조 버전입니다.");
+    if (!data.canvasId || !data.layouts || !data.layouts[data.canvasId]) {
+      throw new Error("캔버스 정보가 없습니다.");
+    }
+  }
+
+  function importProject(data) {
+    validateProject(data);
+    var nextLayouts = cloneLayoutsMap(data.layouts);
+    var imgEntries = data.images || {};
+    var nextImages = {};
+    var chain = Promise.resolve();
+    Object.keys(imgEntries).forEach(function (id) {
+      chain = chain.then(function () {
+        return new Promise(function (resolve, reject) {
+          var e = imgEntries[id];
+          var dataUrl = e && e.dataUrl;
+          if (!dataUrl) return resolve();
+          var img = new Image();
+          img.onload = function () {
+            nextImages[id] = {
+              id: id,
+              name: (e && e.name) || id,
+              url: dataUrl,
+              file: null,
+              img: img,
+            };
+            resolve();
+          };
+          img.onerror = function () { reject(new Error("이미지 로드 실패: " + ((e && e.name) || id))); };
+          img.src = dataUrl;
+        });
+      });
+    });
+    return chain.then(function () {
+      clearProjectState();
+      layouts = nextLayouts;
+      images = nextImages;
+      canvasId = data.canvasId;
+      activeId = layouts[data.canvasId] ? data.canvasId : Object.keys(layouts)[0];
+      maxZ = Math.max(1, +data.maxZ || 1);
+      Object.keys(layouts).forEach(function (id) {
+        ensureFrames(layouts[id]);
+        (layouts[id].children || []).forEach(function (ch) {
+          if (ch.frame && ch.frame.z != null && ch.frame.z > maxZ) maxZ = ch.frame.z;
+        });
+      });
+      selectedChild = -1;
+      previewSel = { parentId: null, index: -1 };
+      readForm();
+      refresh();
+    });
+  }
+
+  function saveProject() {
+    status("구조 저장 중…");
+    buildProject().then(function (project) {
+      var base = (layouts[canvasId] && layouts[canvasId].name) || "obs-grid";
+      var safe = String(base).replace(/[\\/:*?"<>|]+/g, "_").trim() || "obs-grid";
+      downloadJson(project, safe + "-structure.json");
+      var nLay = Object.keys(project.layouts).length;
+      var nImg = Object.keys(project.images).length;
+      status("구조 저장됨 (" + nLay + " 레이아웃, " + nImg + " 이미지)", "ok");
+    }).catch(function (e) {
+      status(String((e && e.message) || e), "err");
+    });
+  }
+
+  function loadProjectFromFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var data = JSON.parse(reader.result);
+        var hasContent =
+          Object.keys(layouts).length > 1 ||
+          (layouts[canvasId] && layouts[canvasId].children && layouts[canvasId].children.length > 0) ||
+          Object.keys(images).length > 0;
+        if (hasContent && !window.confirm("현재 작업 내용을 덮어쓸까요?")) {
+          status("불러오기 취소됨");
+          return;
+        }
+        status("구조 불러오는 중…");
+        importProject(data).then(function () {
+          var nLay = Object.keys(layouts).length;
+          var nImg = Object.keys(images).length;
+          status("구조 불러옴 (" + nLay + " 레이아웃, " + nImg + " 이미지)", "ok");
+        }).catch(function (e) {
+          status(String((e && e.message) || e), "err");
+        });
+      } catch (e) {
+        status("JSON 파싱 실패: " + String((e && e.message) || e), "err");
+      }
+    };
+    reader.onerror = function () { status("파일 읽기 실패", "err"); };
+    reader.readAsText(file);
+  }
+
   // pointer — always edit canvas images + any layout frames (not layout-owned images)
   el.stage.addEventListener("mousedown", function (e) {
     if (e.button) return;
@@ -1124,6 +1341,12 @@
   });
   bindDrop(el.wrap);
   bindDrop(el.kidsPanel);
+
+  $("saveProjectBtn").onclick = saveProject;
+  $("projectInput").onchange = function () {
+    loadProjectFromFile($("projectInput").files && $("projectInput").files[0]);
+    $("projectInput").value = "";
+  };
 
   $("exportPngBtn").onclick = exportPng;
   $("changePngPathBtn").onclick = function () {
