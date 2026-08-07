@@ -1,5 +1,8 @@
 /**
- * OBS Grid Designer — canvas + nested layouts → PNG
+ * OBS Grid Designer — canvas (scene) + nested layouts → PNG
+ *
+ * Canvas = free container (like OBS scene). No grid.
+ * Layout = grid. Nested under a layout: size locked to parent cell, content 1:1 (no squash).
  */
 (function () {
   "use strict";
@@ -12,7 +15,6 @@
 
   var computeGrid = G.computeGrid;
   var ns = G.normalizeSettings;
-  var containRect = G.containRect;
   var Align = G.Align;
 
   var ALIGNS = [
@@ -29,12 +31,15 @@
   var canvasId = null;
   var activeId = null;
   var selectedChild = -1;
+  /** Preview selection: canvas images + any layout frame { parentId, index } */
+  var previewSel = { parentId: null, index: -1 };
   var childDrag = -1;
   var maxZ = 1;
   var pngHandle = null;
   var zoom = 1;
-  var sizeFocus = null;
-  var drag = null; // { mode, layoutId, index, handle, x0, y0, orig }
+  var drag = null;
+  var snapEnabled = true;
+  var SNAP_THRESH = 8;
 
   var el = {
     tree: $("layoutTree"),
@@ -48,17 +53,25 @@
     wLabel: $("widthLabel"),
     hLabel: $("heightLabel"),
     presets: $("canvasPresets"),
-    scaleKids: $("scaleChildren"),
-    cols: $("columns"),
-    gap: $("gap"),
-    pad: $("padding"),
-    aspect: $("aspect"),
-    square: $("keepSquare"),
-    cellAlign: $("cellAlign"),
-    cellAlignRow: $("cellAlignRow"),
-    cellAlignHint: $("cellAlignHint"),
-    contentAlign: $("contentAlign"),
+    layoutPresets: $("layoutPresets"),
+    sizeLockHint: $("sizeLockHint"),
+    canvasHint: $("canvasHint"),
+    gridSettings: $("gridSettingsBlock"),
+    padL: $("padL"),
+    padR: $("padR"),
+    padT: $("padT"),
+    padB: $("padB"),
+    cellW: $("cellW"),
+    cellH: $("cellH"),
+    spacingX: $("spacingX"),
+    spacingY: $("spacingY"),
+    startCorner: $("startCorner"),
+    startAxis: $("startAxis"),
+    childAlign: $("childAlign"),
     alignPad: $("alignPad"),
+    constraint: $("constraint"),
+    constraintCount: $("constraintCount"),
+    constraintCountRow: $("constraintCountRow"),
     clearBg: $("transparentBg"),
     bg: $("bgColor"),
     bgRow: $("bgColorRow"),
@@ -72,6 +85,8 @@
     zoomLabel: $("zoomLabel"),
     canvas: $("exportCanvas"),
     file: $("fileInput"),
+    reflowBtn: $("reflowGridBtn"),
+    snapBtn: $("snapToggleBtn"),
   };
 
   function status(msg, kind) {
@@ -80,10 +95,31 @@
   }
 
   function lay() { return layouts[activeId] || null; }
-  function canvas() { return layouts[canvasId]; }
+  function isCanvas(id) { return id === canvasId; }
+  /** Nested under another layout (not under canvas) → size locked to parent cell */
+  function isSizeLocked(id) {
+    var L = layouts[id];
+    return !!(L && L.parentId && L.parentId !== canvasId);
+  }
+
   function canvasSize() {
-    var s = ns(canvas().settings);
+    var s = ns(layouts[canvasId].settings);
     return { w: s.width, h: s.height };
+  }
+
+  function defaultSettings(extra) {
+    return ns(Object.assign({
+      width: 1920,
+      height: 1080,
+      pad_l: 0, pad_r: 0, pad_t: 0, pad_b: 0,
+      cell_w: 200, cell_h: 160,
+      spacing_x: 0, spacing_y: 0,
+      start_corner: "left-top",
+      start_axis: "horizontal",
+      child_align: Align.LEFT_TOP,
+      constraint: "auto",
+      constraint_count: 4,
+    }, extra || {}));
   }
 
   function makeLayout(name, parentId) {
@@ -92,72 +128,187 @@
       id: id,
       name: name || "Layout",
       parentId: parentId || null,
-      settings: ns({
-        width: 1920, height: 1080, columns: 4, gap: 10, padding: 20,
-        keep_square: false, aspect_ratio: "free",
-        cell_align: Align.LEFT_TOP, content_align: Align.LEFT_TOP,
-      }),
+      settings: defaultSettings(),
       transparentBg: true,
       bgColor: "#000000",
-      scaleChildren: false,
       children: [],
     };
     return id;
   }
 
-  function intrinsicSize(ch) {
-    if (ch.type === "image" && images[ch.refId] && images[ch.refId].img) {
-      var im = images[ch.refId].img;
-      return { w: im.naturalWidth || 200, h: im.naturalHeight || 200 };
-    }
-    if (ch.type === "layout" && layouts[ch.refId]) {
-      var s = ns(layouts[ch.refId].settings);
-      return { w: s.width, h: s.height };
-    }
-    return { w: 200, h: 200 };
-  }
-
-  function makeFrame(ch, cell, i) {
-    var sz = intrinsicSize(ch);
+  function makeFrame(cell, i) {
     return {
-      x: cell ? cell.x : 20,
-      y: cell ? cell.y : 20,
-      w: sz.w,
-      h: sz.h,
+      x: cell ? cell.x : 0,
+      y: cell ? cell.y : 0,
+      w: cell ? cell.width : 200,
+      h: cell ? cell.height : 160,
       z: i + 1,
     };
   }
 
+  /** Canvas-direct images + any layout frame are mouse-editable in preview */
+  function isInteractiveChild(parentId, ch) {
+    if (!ch) return false;
+    if (ch.type === "layout") return true;
+    return ch.type === "image" && parentId === canvasId;
+  }
+
+  function syncSizeFromParent(L) {
+    if (!L || !isSizeLocked(L.id)) return;
+    var parent = layouts[L.parentId];
+    if (!parent) return;
+    var ps = ns(parent.settings);
+    L.settings.width = ps.cell_w;
+    L.settings.height = ps.cell_h;
+  }
+
+  function syncCanvasChildFrame(layoutId) {
+    var L = layouts[layoutId];
+    if (!L || L.parentId !== canvasId) return;
+    var s = ns(L.settings);
+    layouts[canvasId].children.forEach(function (ch) {
+      if (ch.type === "layout" && ch.refId === layoutId && ch.frame) {
+        ch.frame.w = s.width;
+        ch.frame.h = s.height;
+      }
+    });
+  }
+
+  function findParentFrame(layoutId) {
+    var L = layouts[layoutId];
+    if (!L || !L.parentId || !layouts[L.parentId]) return null;
+    var kids = layouts[L.parentId].children;
+    for (var i = 0; i < kids.length; i++) {
+      if (kids[i].type === "layout" && kids[i].refId === layoutId) return kids[i].frame;
+    }
+    return null;
+  }
+
   function ensureFrames(L) {
     if (!L) return;
-    var cells = computeGrid(L.children.length, L.settings);
+
+    if (isCanvas(L.id)) {
+      L.children.forEach(function (ch, i) {
+        if (!ch.frame || !(ch.frame.w > 0) || !(ch.frame.h > 0)) {
+          if (ch.type === "image" && images[ch.refId] && images[ch.refId].img) {
+            var im = images[ch.refId].img;
+            ch.frame = {
+              x: 24 + i * 28,
+              y: 24 + i * 28,
+              w: im.naturalWidth || 200,
+              h: im.naturalHeight || 160,
+              z: i + 1,
+            };
+          } else if (ch.type === "layout" && layouts[ch.refId]) {
+            var cs = ns(layouts[ch.refId].settings);
+            ch.frame = { x: 40 + i * 28, y: 40 + i * 28, w: cs.width, h: cs.height, z: i + 1 };
+          } else {
+            ch.frame = makeFrame(null, i);
+          }
+        }
+        if (ch.type === "layout" && layouts[ch.refId]) {
+          var ls = ns(layouts[ch.refId].settings);
+          ch.frame.w = ls.width;
+          ch.frame.h = ls.height;
+        }
+        if (ch.frame.z == null) ch.frame.z = i + 1;
+        if (ch.frame.z > maxZ) maxZ = ch.frame.z;
+      });
+      return;
+    }
+
+    // Layout: create missing frames only — do not re-grid until reflow()
+    var cells = computeGrid(Math.max(L.children.length, 1), L.settings);
     L.children.forEach(function (ch, i) {
-      if (!ch.frame || !(ch.frame.w > 0) || !(ch.frame.h > 0)) ch.frame = makeFrame(ch, cells[i], i);
+      if (!ch.frame || !(ch.frame.w > 0) || !(ch.frame.h > 0)) {
+        ch.frame = makeFrame(cells[i] || cells[0], i);
+        if (ch.type === "layout" && layouts[ch.refId]) {
+          layouts[ch.refId].settings.width = ch.frame.w;
+          layouts[ch.refId].settings.height = ch.frame.h;
+        }
+      }
       if (ch.frame.z == null) ch.frame.z = i + 1;
       if (ch.frame.z > maxZ) maxZ = ch.frame.z;
     });
   }
 
   function reflow(L) {
+    if (!L || isCanvas(L.id)) return;
     var cells = computeGrid(L.children.length, L.settings);
+    var s = ns(L.settings);
     L.children.forEach(function (ch, i) {
       var z = ch.frame && ch.frame.z != null ? ch.frame.z : i + 1;
-      ch.frame = makeFrame(ch, cells[i], i);
+      ch.frame = makeFrame(cells[i], i);
       ch.frame.z = z;
+      if (ch.type === "layout" && layouts[ch.refId]) {
+        layouts[ch.refId].settings.width = s.cell_w;
+        layouts[ch.refId].settings.height = s.cell_h;
+        syncSizeFromParent(layouts[ch.refId]);
+      }
     });
   }
 
-  function scaleKids(L, ow, oh, nw, nh) {
-    if (!L || !L.scaleChildren || !(ow > 0) || !(oh > 0)) return;
-    var sx = nw / ow, sy = nh / oh;
-    if (sx === 1 && sy === 1) return;
-    L.children.forEach(function (ch) {
-      if (!ch.frame) return;
-      ch.frame.x = Math.round(ch.frame.x * sx);
-      ch.frame.y = Math.round(ch.frame.y * sy);
-      ch.frame.w = Math.max(1, Math.round(ch.frame.w * sx));
-      ch.frame.h = Math.max(1, Math.round(ch.frame.h * sy));
+  function collectSnapGuides(parentId, excludeIndex) {
+    var parent = layouts[parentId];
+    var ps = ns(parent.settings);
+    var gx = [0, ps.width, ps.width / 2];
+    var gy = [0, ps.height, ps.height / 2];
+    parent.children.forEach(function (ch, i) {
+      if (i === excludeIndex || !ch.frame || ch.type !== "layout") return;
+      var f = ch.frame;
+      gx.push(f.x, f.x + f.w, f.x + f.w / 2);
+      gy.push(f.y, f.y + f.h, f.y + f.h / 2);
     });
+    return { x: gx, y: gy };
+  }
+
+  function snapDelta(edges, guides, thresh) {
+    var best = 0;
+    var bestDist = thresh + 1;
+    for (var i = 0; i < edges.length; i++) {
+      for (var j = 0; j < guides.length; j++) {
+        var d = Math.abs(edges[i] - guides[j]);
+        if (d <= thresh && d < bestDist) {
+          bestDist = d;
+          best = guides[j] - edges[i];
+        }
+      }
+    }
+    return bestDist <= thresh ? best : 0;
+  }
+
+  function snapMoveRect(x, y, w, h, guides, thresh) {
+    x += snapDelta([x, x + w, x + w / 2], guides.x, thresh);
+    y += snapDelta([y, y + h, y + h / 2], guides.y, thresh);
+    return { x: x, y: y, w: w, h: h };
+  }
+
+  function snapResizeRect(x, y, w, h, handle, guides, thresh) {
+    var right = x + w;
+    var bottom = y + h;
+    if (handle.indexOf("e") >= 0) {
+      right += snapDelta([right], guides.x, thresh);
+      w = Math.max(24, right - x);
+    }
+    if (handle.indexOf("w") >= 0) {
+      var nx = x + snapDelta([x], guides.x, thresh);
+      w = Math.max(24, right - nx);
+      x = right - w;
+    }
+    if (handle.indexOf("s") >= 0) {
+      bottom += snapDelta([bottom], guides.y, thresh);
+      h = Math.max(24, bottom - y);
+    }
+    if (handle.indexOf("n") >= 0) {
+      var ny = y + snapDelta([y], guides.y, thresh);
+      h = Math.max(24, bottom - ny);
+      y = bottom - h;
+    }
+    return { x: x, y: y, w: w, h: h };
+  }
+
+  function reflowIfLayout(id) {
+    if (id && layouts[id] && !isCanvas(id)) reflow(layouts[id]);
   }
 
   function byZ(L) {
@@ -165,12 +316,6 @@
       return ((L.children[a].frame && L.children[a].frame.z) || 0) -
         ((L.children[b].frame && L.children[b].frame.z) || 0);
     });
-  }
-
-  // position scales with parent box; size stays intrinsic pixels
-  function showFrame(ch, sx, sy) {
-    var f = ch.frame;
-    return { x: f.x * sx, y: f.y * sy, w: f.w, h: f.h, z: f.z };
   }
 
   function fillAlign(sel) {
@@ -186,19 +331,33 @@
   }
 
   function syncChrome() {
-    var isC = activeId === canvasId;
+    var isC = isCanvas(activeId);
+    var locked = isSizeLocked(activeId);
     el.heading.textContent = isC ? "캔버스 설정" : "레이아웃 설정";
     el.wLabel.textContent = isC ? "캔버스 너비" : "레이아웃 너비";
     el.hLabel.textContent = isC ? "캔버스 높이" : "레이아웃 높이";
     el.presets.hidden = !isC;
-    var cellOn = el.square.checked || el.aspect.value !== "free";
-    el.cellAlignRow.style.opacity = cellOn ? "1" : "0.45";
-    el.cellAlign.disabled = !cellOn;
-    el.cellAlignHint.textContent = cellOn
-      ? "셀→슬롯: 정사각/고정비율일 때 격자 칸 안 위치. 「격자」로 반영."
-      : "셀→슬롯은 정사각/고정비율일 때만 의미 있음.";
+    if (el.layoutPresets) el.layoutPresets.hidden = isC || locked;
+    el.canvasHint.hidden = !isC;
+    el.gridSettings.hidden = isC;
+    el.sizeLockHint.hidden = !locked;
+    el.w.disabled = locked;
+    el.h.disabled = locked;
+    if (el.reflowBtn) {
+      el.reflowBtn.disabled = !!isC;
+      el.reflowBtn.title = isC ? "캔버스에는 격자가 없습니다" : "격자 재배치";
+    }
+    if (el.snapBtn) {
+      el.snapBtn.classList.toggle("active", snapEnabled);
+      el.snapBtn.title = snapEnabled ? "자석 스냅 ON" : "자석 스냅 OFF";
+    }
+    var fixed = !isC && el.constraint.value !== "auto";
+    el.constraintCountRow.hidden = !fixed;
     var c = canvasSize();
     el.badge.textContent = "캔버스 " + c.w + " × " + c.h;
+    el.alignPad.querySelectorAll("button").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.align === el.childAlign.value);
+    });
   }
 
   function readForm() {
@@ -208,22 +367,23 @@
     el.name.value = L.name;
     el.w.value = s.width;
     el.h.value = s.height;
-    el.cols.value = s.columns;
-    el.gap.value = s.gap;
-    el.pad.value = s.padding;
-    el.aspect.value = s.aspect_ratio;
-    el.square.checked = s.keep_square;
-    el.aspect.disabled = s.keep_square;
-    el.cellAlign.value = s.cell_align;
-    el.contentAlign.value = s.content_align;
-    el.scaleKids.checked = !!L.scaleChildren;
+    el.padL.value = s.pad_l;
+    el.padR.value = s.pad_r;
+    el.padT.value = s.pad_t;
+    el.padB.value = s.pad_b;
+    el.cellW.value = s.cell_w;
+    el.cellH.value = s.cell_h;
+    el.spacingX.value = s.spacing_x;
+    el.spacingY.value = s.spacing_y;
+    el.startCorner.value = s.start_corner;
+    el.startAxis.value = s.start_axis;
+    el.childAlign.value = s.child_align;
+    el.constraint.value = s.constraint;
+    el.constraintCount.value = s.constraint_count;
     el.clearBg.checked = L.transparentBg !== false;
     el.bg.value = L.bgColor || "#000000";
     el.bg.disabled = el.clearBg.checked;
     el.bgRow.style.opacity = el.clearBg.checked ? "0.5" : "1";
-    el.alignPad.querySelectorAll("button").forEach(function (b) {
-      b.classList.toggle("active", b.dataset.align === el.contentAlign.value);
-    });
     syncChrome();
   }
 
@@ -231,20 +391,47 @@
     var L = lay();
     if (!L) return;
     L.name = el.name.value.trim() || L.name;
-    L.scaleChildren = el.scaleKids.checked;
-    L.settings = ns({
-      width: Math.max(1, +el.w.value || 1),
-      height: Math.max(1, +el.h.value || 1),
-      columns: +el.cols.value,
-      gap: +el.gap.value,
-      padding: +el.pad.value,
-      keep_square: el.square.checked,
-      aspect_ratio: el.aspect.value,
-      cell_align: el.cellAlign.value,
-      content_align: el.contentAlign.value,
-    });
     L.transparentBg = el.clearBg.checked;
     L.bgColor = el.bg.value;
+
+    if (isCanvas(L.id)) {
+      L.settings = ns(Object.assign({}, L.settings, {
+        width: Math.max(1, +el.w.value || 1),
+        height: Math.max(1, +el.h.value || 1),
+      }));
+      syncChrome();
+      return;
+    }
+
+    var locked = isSizeLocked(L.id);
+    var cur = ns(L.settings);
+    L.settings = ns({
+      width: locked ? cur.width : Math.max(1, +el.w.value || 1),
+      height: locked ? cur.height : Math.max(1, +el.h.value || 1),
+      pad_l: +el.padL.value || 0,
+      pad_r: +el.padR.value || 0,
+      pad_t: +el.padT.value || 0,
+      pad_b: +el.padB.value || 0,
+      cell_w: Math.max(1, +el.cellW.value || 1),
+      cell_h: Math.max(1, +el.cellH.value || 1),
+      spacing_x: +el.spacingX.value || 0,
+      spacing_y: +el.spacingY.value || 0,
+      start_corner: el.startCorner.value,
+      start_axis: el.startAxis.value,
+      child_align: el.childAlign.value,
+      constraint: el.constraint.value,
+      constraint_count: +el.constraintCount.value || 1,
+    });
+    syncCanvasChildFrame(L.id);
+    // Nested under layout: keep parent frame in sync with settings when form size unlocked path N/A;
+    // size-locked layouts sync frame from settings only via reflow / mouse resize.
+    if (!locked) {
+      var pf = findParentFrame(L.id);
+      if (pf) {
+        pf.w = ns(L.settings).width;
+        pf.h = ns(L.settings).height;
+      }
+    }
     syncChrome();
   }
 
@@ -253,6 +440,17 @@
     writeForm();
     activeId = id;
     selectedChild = -1;
+    if (id !== canvasId && layouts[id].parentId) {
+      var kids = layouts[layouts[id].parentId].children;
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i].type === "layout" && kids[i].refId === id) {
+          previewSel = { parentId: layouts[id].parentId, index: i };
+          break;
+        }
+      }
+    } else {
+      previewSel = { parentId: null, index: -1 };
+    }
     readForm();
     refresh();
   }
@@ -298,7 +496,12 @@
       mark.type = "radio";
       mark.name = "kid";
       mark.checked = i === selectedChild;
-      mark.onchange = function () { selectedChild = i; renderKids(); refreshPreview(); };
+      mark.onchange = function () {
+        selectedChild = i;
+        previewSel = isInteractiveChild(L.id, ch) ? { parentId: L.id, index: i } : { parentId: null, index: -1 };
+        renderKids();
+        refreshPreview();
+      };
 
       if (ch.type === "image" && images[ch.refId]) {
         var thumb = document.createElement("img");
@@ -318,6 +521,7 @@
       li.onclick = function (e) {
         if (e.target === mark) return;
         selectedChild = i;
+        previewSel = isInteractiveChild(L.id, ch) ? { parentId: L.id, index: i } : { parentId: null, index: -1 };
         renderKids();
         refreshPreview();
       };
@@ -338,20 +542,18 @@
     });
   }
 
-  function paint(container, layoutId, depth, editId, highlightId) {
+  function paint(container, layoutId, depth, highlightId) {
     var L = layouts[layoutId];
     if (!L || depth > 20) return;
     ensureFrames(L);
     var s = ns(L.settings);
-    var sx = 1, sy = 1; // always paint layout in its own settings space
     container.dataset.layoutId = layoutId;
     container.style.width = s.width + "px";
     container.style.height = s.height + "px";
     container.style.background = L.transparentBg !== false ? "transparent" : (L.bgColor || "#000");
     container.replaceChildren();
-    var editable = layoutId === editId;
-    if (editable) container.classList.add("editable-stage");
-    if (editable && layoutId === canvasId) {
+    if (isCanvas(layoutId)) {
+      container.classList.add("editable-stage");
       ["e", "s", "se"].forEach(function (h) {
         var d = document.createElement("div");
         d.className = "canvas-handle " + h;
@@ -362,14 +564,16 @@
 
     byZ(L).forEach(function (i) {
       var ch = L.children[i];
-      var f = showFrame(ch, sx, sy);
+      var f = ch.frame;
+      var interactive = isInteractiveChild(layoutId, ch);
       var cell = document.createElement("div");
-      cell.className = "grid-cell" + (editable ? " interactive" : "");
+      cell.className = "grid-cell" + (interactive ? " interactive" : "");
+      cell.dataset.parentId = layoutId;
       cell.dataset.childIndex = String(i);
       cell.style.cssText =
         "left:" + f.x + "px;top:" + f.y + "px;width:" + f.w + "px;height:" + f.h + "px;z-index:" + (f.z || i + 1);
       if (ch.type === "layout" && ch.refId === highlightId) cell.classList.add("highlight-nested");
-      if (editable && i === selectedChild) {
+      if (interactive && previewSel.parentId === layoutId && previewSel.index === i) {
         cell.classList.add("selected");
         ["nw", "n", "ne", "e", "se", "s", "sw", "w"].forEach(function (h) {
           var d = document.createElement("div");
@@ -379,21 +583,23 @@
         });
       }
       if (ch.type === "image" && images[ch.refId] && images[ch.refId].img) {
-        var item = images[ch.refId];
-        var fit = containRect(item.img.naturalWidth, item.img.naturalHeight, f.w, f.h, s.content_align);
         var img = document.createElement("img");
-        img.src = item.url;
+        img.src = images[ch.refId].url;
         img.draggable = false;
-        img.style.cssText =
-          "left:" + fit.x + "px;top:" + fit.y + "px;width:" + fit.w + "px;height:" + fit.h + "px";
+        img.style.cssText = "left:0;top:0;width:100%;height:100%;object-fit:fill";
         cell.appendChild(img);
       } else if (ch.type === "layout" && layouts[ch.refId]) {
+        var nestedLay = layouts[ch.refId];
+        nestedLay.settings.width = f.w;
+        nestedLay.settings.height = f.h;
         var nested = document.createElement("div");
-        nested.className = "nested-stage" + (ch.refId === editId ? " editable-stage" : "");
+        nested.className = "nested-stage";
+        nested.style.width = f.w + "px";
+        nested.style.height = f.h + "px";
         cell.appendChild(nested);
-        paint(nested, ch.refId, depth + 1, editId, highlightId);
+        paint(nested, ch.refId, depth + 1, highlightId);
       }
-      if (editable) {
+      if (interactive) {
         var lab = document.createElement("span");
         lab.className = "grid-cell-label";
         lab.textContent = String(i + 1) + (ch.type === "layout" ? " #" : "");
@@ -415,12 +621,14 @@
     byZ(L).forEach(function (i) {
       var ch = L.children[i];
       var f = ch.frame;
+      var x = ox + f.x;
+      var y = oy + f.y;
       if (ch.type === "image" && images[ch.refId] && images[ch.refId].img) {
-        var item = images[ch.refId];
-        var fit = containRect(item.img.naturalWidth, item.img.naturalHeight, f.w, f.h, s.content_align);
-        ctx.drawImage(item.img, ox + f.x + fit.x, oy + f.y + fit.y, fit.w, fit.h);
+        ctx.drawImage(images[ch.refId].img, x, y, f.w, f.h);
       } else if (ch.type === "layout" && layouts[ch.refId]) {
-        draw(ctx, ch.refId, ox + f.x, oy + f.y, depth + 1);
+        layouts[ch.refId].settings.width = f.w;
+        layouts[ch.refId].settings.height = f.h;
+        draw(ctx, ch.refId, x, y, depth + 1);
       }
     });
   }
@@ -439,7 +647,7 @@
   }
 
   function applyZoom() {
-    var s = ns(canvas().settings);
+    var s = ns(layouts[canvasId].settings);
     var fit = Math.min(1, el.wrap.clientWidth / s.width, el.wrap.clientHeight / s.height) || 1;
     var sc = fit * zoom;
     el.shell.style.width = s.width * sc + "px";
@@ -455,8 +663,7 @@
 
   function refreshPreview() {
     writeForm();
-    var s = ns(canvas().settings);
-    paint(el.stage, canvasId, 0, activeId || canvasId, activeId !== canvasId ? activeId : null);
+    paint(el.stage, canvasId, 0, activeId !== canvasId ? activeId : null);
     applyZoom();
   }
 
@@ -494,13 +701,30 @@
     });
     chain.then(function () {
       var start = L.children.length;
-      var cells = computeGrid(start + added.length, L.settings);
-      added.forEach(function (id, off) {
-        var ch = { type: "image", refId: id };
-        ch.frame = makeFrame(ch, cells[start + off], start + off);
-        if (ch.frame.z > maxZ) maxZ = ch.frame.z;
-        L.children.push(ch);
-      });
+      if (isCanvas(L.id)) {
+        added.forEach(function (id, off) {
+          var im = images[id].img;
+          var i = start + off;
+          var ch = {
+            type: "image",
+            refId: id,
+            frame: {
+              x: 24 + i * 28,
+              y: 24 + i * 28,
+              w: im.naturalWidth || 200,
+              h: im.naturalHeight || 160,
+              z: i + 1,
+            },
+          };
+          if (ch.frame.z > maxZ) maxZ = ch.frame.z;
+          L.children.push(ch);
+        });
+      } else {
+        added.forEach(function (id) {
+          L.children.push({ type: "image", refId: id, frame: null });
+        });
+        reflow(L);
+      }
       refresh();
       status(files.length + "개 이미지 추가됨", "ok");
     }).catch(function (e) { status(String(e.message || e), "err"); });
@@ -524,7 +748,6 @@
     });
   }
 
-  // ——— PNG save ———
   function idb(op, key, val) {
     return new Promise(function (resolve, reject) {
       var req = indexedDB.open("obs-grid-designer", 1);
@@ -577,10 +800,9 @@
         });
       });
     }
-    var p = pngHandle
+    return pngHandle
       ? write(pngHandle).catch(function () { return pickPng().then(write); })
       : pickPng().then(write);
-    return p;
   }
 
   function exportPng() {
@@ -601,34 +823,60 @@
     }, "image/png");
   }
 
-  // ——— pointer ———
+  // pointer — always edit canvas images + any layout frames (not layout-owned images)
   el.stage.addEventListener("mousedown", function (e) {
     if (e.button) return;
-    var editId = activeId || canvasId;
-    var L = layouts[editId];
-    if (!L) return;
     writeForm();
-    ensureFrames(L);
     var t = e.target;
-    if (t.dataset && t.dataset.canvasHandle && editId === canvasId) {
+    if (t.dataset && t.dataset.canvasHandle) {
       var p = toLocal(e.clientX, e.clientY, canvasId);
-      var s = ns(L.settings);
-      drag = { mode: "canvas", layoutId: canvasId, handle: t.dataset.canvasHandle, x0: p.x, y0: p.y, orig: { w: s.width, h: s.height } };
+      var cs = ns(layouts[canvasId].settings);
+      drag = {
+        mode: "canvas",
+        layoutId: canvasId,
+        handle: t.dataset.canvasHandle,
+        x0: p.x,
+        y0: p.y,
+        orig: { w: cs.width, h: cs.height },
+      };
       e.preventDefault();
       return;
     }
     var handle = t.closest && t.closest(".resize-handle");
     var cell = t.closest && t.closest(".grid-cell.interactive");
     if (cell) {
+      var parentId = cell.dataset.parentId;
       var idx = +cell.dataset.childIndex;
-      selectedChild = idx;
+      var parent = layouts[parentId];
+      if (!parent || !parent.children[idx]) return;
+      var ch = parent.children[idx];
+      if (!isInteractiveChild(parentId, ch)) return;
+
+      previewSel = { parentId: parentId, index: idx };
       maxZ += 1;
-      L.children[idx].frame.z = maxZ;
-      var p2 = toLocal(e.clientX, e.clientY, editId);
-      var fr = L.children[idx].frame;
+      ch.frame.z = maxZ;
+
+      if (ch.type === "layout" && layouts[ch.refId]) {
+        if (activeId !== ch.refId) {
+          activeId = ch.refId;
+          selectedChild = -1;
+          readForm();
+          renderTree();
+        }
+      } else {
+        if (activeId !== canvasId) {
+          activeId = canvasId;
+          readForm();
+          renderTree();
+        }
+        selectedChild = idx;
+      }
+
+      var p2 = toLocal(e.clientX, e.clientY, parentId);
+      var fr = ch.frame;
       drag = {
         mode: handle ? "resize" : "move",
-        layoutId: editId,
+        layoutId: parentId,
         index: idx,
         handle: handle ? handle.dataset.handle : null,
         x0: p2.x,
@@ -640,6 +888,7 @@
       e.preventDefault();
       return;
     }
+    previewSel = { parentId: null, index: -1 };
     selectedChild = -1;
     refreshPreview();
     renderKids();
@@ -655,10 +904,9 @@
       var nw = drag.orig.w, nh = drag.orig.h;
       if (drag.handle.indexOf("e") >= 0) nw = Math.max(64, drag.orig.w + dx);
       if (drag.handle.indexOf("s") >= 0) nh = Math.max(64, drag.orig.h + dy);
-      scaleKids(L, drag.orig.w, drag.orig.h, nw, nh);
       L.settings.width = Math.round(nw);
       L.settings.height = Math.round(nh);
-      if (drag.layoutId === activeId) {
+      if (activeId === canvasId) {
         el.w.value = L.settings.width;
         el.h.value = L.settings.height;
       }
@@ -669,8 +917,10 @@
     var ch = L.children[drag.index];
     if (!ch || !ch.frame) return;
     var o = drag.orig, x = o.x, y = o.y, w = o.w, h = o.h;
-    if (drag.mode === "move") { x = o.x + dx; y = o.y + dy; }
-    else {
+    if (drag.mode === "move") {
+      x = o.x + dx;
+      y = o.y + dy;
+    } else {
       var hd = drag.handle;
       if (hd.indexOf("e") >= 0) w = o.w + dx;
       if (hd.indexOf("s") >= 0) h = o.h + dy;
@@ -679,31 +929,57 @@
       if (w < 24) { if (hd.indexOf("w") >= 0) x = o.x + o.w - 24; w = 24; }
       if (h < 24) { if (hd.indexOf("n") >= 0) y = o.y + o.h - 24; h = 24; }
     }
+    if (snapEnabled && ch.type === "layout") {
+      var guides = collectSnapGuides(drag.layoutId, drag.index);
+      var snapped = drag.mode === "move"
+        ? snapMoveRect(x, y, w, h, guides, SNAP_THRESH)
+        : snapResizeRect(x, y, w, h, drag.handle || "", guides, SNAP_THRESH);
+      x = snapped.x;
+      y = snapped.y;
+      w = snapped.w;
+      h = snapped.h;
+    }
     ch.frame.x = Math.round(x);
     ch.frame.y = Math.round(y);
     ch.frame.w = Math.round(w);
     ch.frame.h = Math.round(h);
+    if (ch.type === "layout" && layouts[ch.refId]) {
+      layouts[ch.refId].settings.width = ch.frame.w;
+      layouts[ch.refId].settings.height = ch.frame.h;
+      if (activeId === ch.refId) {
+        el.w.value = ch.frame.w;
+        el.h.value = ch.frame.h;
+      }
+    }
     refreshPreview();
     e.preventDefault();
   });
 
   window.addEventListener("mouseup", function () {
     if (!drag) return;
+    var finished = drag;
     drag = null;
+    if (finished.mode === "resize") {
+      var PL = layouts[finished.layoutId];
+      var pch = PL && PL.children[finished.index];
+      if (pch && pch.type === "layout") reflowIfLayout(pch.refId);
+    }
+    refresh();
     status("프레임 수정됨", "ok");
   });
 
-  // ——— wire UI ———
-  fillAlign(el.cellAlign);
-  fillAlign(el.contentAlign);
+  // wire
+  fillAlign(el.childAlign);
   ALIGNS.forEach(function (k) {
     var b = document.createElement("button");
     b.type = "button";
     b.dataset.align = k;
     b.title = k;
     b.onclick = function () {
-      el.contentAlign.value = k;
+      if (isCanvas(activeId)) return;
+      el.childAlign.value = k;
       writeForm();
+      reflow(lay());
       refresh();
     };
     el.alignPad.appendChild(b);
@@ -714,11 +990,22 @@
     if (!parent) return;
     writeForm();
     var id = makeLayout(parent.name + " / Child", parent.id);
-    layouts[id].settings.width = 960;
-    layouts[id].settings.height = 540;
-    layouts[id].settings.columns = 2;
-    parent.children.push({ type: "layout", refId: id });
-    ensureFrames(parent);
+    if (isCanvas(parent.id)) {
+      layouts[id].settings.width = 960;
+      layouts[id].settings.height = 540;
+      var i = parent.children.length;
+      parent.children.push({
+        type: "layout",
+        refId: id,
+        frame: { x: 40 + i * 28, y: 40 + i * 28, w: 960, h: 540, z: i + 1 },
+      });
+    } else {
+      var ps = ns(parent.settings);
+      layouts[id].settings.width = ps.cell_w;
+      layouts[id].settings.height = ps.cell_h;
+      parent.children.push({ type: "layout", refId: id, frame: null });
+      reflow(parent);
+    }
     selectLayout(id);
   };
 
@@ -731,6 +1018,7 @@
       });
     });
     delete layouts[id];
+    if (parentId && layouts[parentId] && !isCanvas(parentId)) reflow(layouts[parentId]);
     selectLayout(parentId && layouts[parentId] ? parentId : canvasId);
   };
 
@@ -739,6 +1027,8 @@
     if (!L || selectedChild < 0) return;
     L.children.splice(selectedChild, 1);
     selectedChild = -1;
+    previewSel = { parentId: null, index: -1 };
+    if (!isCanvas(L.id)) reflow(L);
     refresh();
   };
 
@@ -748,12 +1038,14 @@
     if (!confirm("자식 항목을 모두 제거할까요?")) return;
     L.children = [];
     selectedChild = -1;
+    previewSel = { parentId: null, index: -1 };
+    if (!isCanvas(L.id)) reflow(L);
     refresh();
   };
 
-  $("reflowGridBtn").onclick = function () {
+  el.reflowBtn.onclick = function () {
     var L = lay();
-    if (!L) return;
+    if (!L || isCanvas(L.id)) return status("캔버스에는 격자가 없습니다. 레이아웃을 선택하세요.", "err");
     writeForm();
     reflow(L);
     selectedChild = -1;
@@ -761,39 +1053,32 @@
     status("격자 재배치 완료", "ok");
   };
 
-  ["name", "cols", "gap", "pad", "aspect", "cellAlign", "contentAlign"].forEach(function (k) {
-    var map = { name: el.name, cols: el.cols, gap: el.gap, pad: el.pad, aspect: el.aspect, cellAlign: el.cellAlign, contentAlign: el.contentAlign };
+  var formKeys = [
+    el.name, el.padL, el.padR, el.padT, el.padB,
+    el.cellW, el.cellH, el.spacingX, el.spacingY,
+    el.startCorner, el.startAxis, el.childAlign,
+    el.constraint, el.constraintCount,
+  ];
+  formKeys.forEach(function (node) {
     ["input", "change"].forEach(function (ev) {
-      map[k].addEventListener(ev, function () { writeForm(); refresh(); });
+      node.addEventListener(ev, function () {
+        writeForm();
+        if (node !== el.name && !isCanvas(activeId)) reflow(lay());
+        refresh();
+      });
     });
   });
 
-  [el.w, el.h].forEach(function (inp) {
-    inp.addEventListener("focus", function () {
-      var L = lay();
-      if (!L) return;
-      var s = ns(L.settings);
-      sizeFocus = { w: s.width, h: s.height };
-    });
-    inp.addEventListener("change", function () {
-      var L = lay();
-      if (!L) return;
-      writeForm();
-      if (sizeFocus && L.scaleChildren) {
-        var s = ns(L.settings);
-        scaleKids(L, sizeFocus.w, sizeFocus.h, s.width, s.height);
-      }
-      sizeFocus = null;
-      refresh();
-    });
-  });
-
-  el.scaleKids.onchange = writeForm;
-  el.square.onchange = function () {
-    el.aspect.disabled = el.square.checked;
+  function onSizeFieldChange() {
     writeForm();
+    if (!isCanvas(activeId) && !isSizeLocked(activeId)) reflow(lay());
     refresh();
-  };
+  }
+  [el.w, el.h].forEach(function (inp) {
+    inp.addEventListener("change", onSizeFieldChange);
+    inp.addEventListener("input", onSizeFieldChange);
+  });
+
   el.clearBg.onchange = function () {
     el.bg.disabled = el.clearBg.checked;
     el.bgRow.style.opacity = el.clearBg.checked ? "0.5" : "1";
@@ -801,6 +1086,15 @@
     refreshPreview();
   };
   el.bg.oninput = function () { writeForm(); refreshPreview(); };
+
+  if (el.snapBtn) {
+    el.snapBtn.onclick = function () {
+      snapEnabled = !snapEnabled;
+      el.snapBtn.classList.toggle("active", snapEnabled);
+      el.snapBtn.title = snapEnabled ? "자석 스냅 ON" : "자석 스냅 OFF";
+      status(snapEnabled ? "자석 스냅 ON" : "자석 스냅 OFF", "ok");
+    };
+  }
 
   $("zoomInBtn").onclick = function () { zoom = Math.min(8, zoom * 1.2); applyZoom(); };
   $("zoomOutBtn").onclick = function () { zoom = Math.max(0.25, zoom / 1.2); applyZoom(); };
@@ -847,21 +1141,21 @@
 
   document.querySelectorAll(".preset-size").forEach(function (btn) {
     btn.onclick = function () {
-      if (activeId !== canvasId) return;
-      var L = lay();
-      var s = ns(L.settings);
-      var nw = +btn.getAttribute("data-w"), nh = +btn.getAttribute("data-h");
-      el.w.value = nw;
-      el.h.value = nh;
-      scaleKids(L, s.width, s.height, nw, nh);
+      if (!activeId || isSizeLocked(activeId)) return;
+      var forCanvas = !!(el.presets && el.presets.contains(btn));
+      var forLayout = !!(el.layoutPresets && el.layoutPresets.contains(btn));
+      if (forCanvas && !isCanvas(activeId)) return;
+      if (forLayout && isCanvas(activeId)) return;
+      el.w.value = btn.getAttribute("data-w");
+      el.h.value = btn.getAttribute("data-h");
       writeForm();
+      if (forLayout && !isCanvas(activeId)) reflow(lay());
       refresh();
     };
   });
 
   window.addEventListener("resize", refreshPreview);
 
-  // boot
   canvasId = makeLayout("Canvas", null);
   activeId = canvasId;
   readForm();
@@ -872,5 +1166,5 @@
       el.paths.innerHTML = "PNG: <strong>" + (h ? h.name : "(미선택)") + "</strong>";
     }).catch(function () {});
   }
-  status("미리보기나 자식 목록에 이미지를 드롭하세요");
+  status("캔버스에 레이아웃을 추가하거나 이미지를 드롭하세요");
 })();

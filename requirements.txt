@@ -1,2 +1,0 @@
-PyQt6>=6.6.0
-obsws-python>=1.6.0

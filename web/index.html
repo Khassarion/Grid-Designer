@@ -59,51 +59,100 @@
               <button type="button" class="preset-size" data-w="1280" data-h="720">1280×720</button>
               <button type="button" class="preset-size" data-w="1080" data-h="1920">1080×1920</button>
             </div>
-            <label class="checkbox-row">
-              <input id="scaleChildren" type="checkbox" />
-              레이아웃 크기 변경 시 셀 크기도 스케일
-            </label>
+            <div class="actions tight wrap" id="layoutPresets" hidden>
+              <button type="button" class="preset-size" data-w="200" data-h="1080">200×1080</button>
+              <button type="button" class="preset-size" data-w="1920" data-h="160">1920×160</button>
+              <button type="button" class="preset-size" data-w="400" data-h="1080">400×1080</button>
+            </div>
+            <p id="sizeLockHint" class="muted" hidden>부모 레이아웃 셀 크기로 고정</p>
+            <p id="canvasHint" class="muted">캔버스는 장면 컨테이너입니다. 격자 배치 없음 · 자식은 자유 배치</p>
 
-            <div class="form-grid">
-              <div class="form-row">
-                <label for="columns">열</label>
-                <input id="columns" type="number" value="4" min="1" max="64" />
+            <div id="gridSettingsBlock">
+              <h2>패딩</h2>
+              <div class="form-grid">
+                <div class="form-row">
+                  <label for="padL">좌</label>
+                  <input id="padL" type="number" value="0" min="0" />
+                </div>
+                <div class="form-row">
+                  <label for="padR">우</label>
+                  <input id="padR" type="number" value="0" min="0" />
+                </div>
+                <div class="form-row">
+                  <label for="padT">상</label>
+                  <input id="padT" type="number" value="0" min="0" />
+                </div>
+                <div class="form-row">
+                  <label for="padB">하</label>
+                  <input id="padB" type="number" value="0" min="0" />
+                </div>
               </div>
-              <div class="form-row">
-                <label for="gap">간격</label>
-                <input id="gap" type="number" value="10" min="0" />
+
+              <h2>셀 크기</h2>
+              <div class="form-grid">
+                <div class="form-row">
+                  <label for="cellW">가로</label>
+                  <input id="cellW" type="number" value="200" min="1" />
+                </div>
+                <div class="form-row">
+                  <label for="cellH">세로</label>
+                  <input id="cellH" type="number" value="160" min="1" />
+                </div>
               </div>
-              <div class="form-row">
-                <label for="padding">패딩</label>
-                <input id="padding" type="number" value="20" min="0" />
+              <p class="muted">고정 크기 · 이미지는 셀에 꽉 채움</p>
+
+              <h2>스페이싱</h2>
+              <div class="form-grid">
+                <div class="form-row">
+                  <label for="spacingX">가로</label>
+                  <input id="spacingX" type="number" value="0" />
+                </div>
+                <div class="form-row">
+                  <label for="spacingY">세로</label>
+                  <input id="spacingY" type="number" value="0" />
+                </div>
               </div>
-              <div class="form-row">
-                <label for="aspect">셀 비율</label>
-                <select id="aspect">
-                  <option value="free">자유</option>
-                  <option value="16:9">16:9</option>
-                  <option value="4:3">4:3</option>
+              <p class="muted">음수 가능 (겹침)</p>
+
+              <h2>배치</h2>
+              <div class="form-grid">
+                <div class="form-row">
+                  <label for="startCorner">시작 코너</label>
+                  <select id="startCorner">
+                    <option value="left-top">Left Top</option>
+                    <option value="right-top">Right Top</option>
+                    <option value="left-bottom">Left Bottom</option>
+                    <option value="right-bottom">Right Bottom</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label for="startAxis">시작 축</label>
+                  <select id="startAxis">
+                    <option value="horizontal">수평</option>
+                    <option value="vertical">수직</option>
+                  </select>
+                </div>
+                <div class="form-row full">
+                  <label for="childAlign">자식 정렬</label>
+                  <select id="childAlign"></select>
+                </div>
+              </div>
+              <p class="muted">자식 정렬 = 셀 그룹이 레이아웃 안 어디에 붙는지</p>
+              <div id="alignPad" class="align-pad" title="자식 정렬"></div>
+
+              <h2>제약</h2>
+              <div class="form-row full">
+                <select id="constraint">
+                  <option value="auto">자동</option>
+                  <option value="columns">열 개수</option>
+                  <option value="rows">행 개수</option>
                 </select>
               </div>
-            </div>
-            <label class="checkbox-row">
-              <input id="keepSquare" type="checkbox" />
-              정사각형 셀
-            </label>
-
-            <h2>정렬</h2>
-            <div class="form-grid">
-              <div class="form-row" id="cellAlignRow">
-                <label for="cellAlign">셀→슬롯</label>
-                <select id="cellAlign"></select>
-              </div>
-              <div class="form-row">
-                <label for="contentAlign">이미지→셀</label>
-                <select id="contentAlign"></select>
+              <div class="form-row full" id="constraintCountRow" hidden>
+                <label for="constraintCount">개수</label>
+                <input id="constraintCount" type="number" value="4" min="1" max="64" />
               </div>
             </div>
-            <p id="cellAlignHint" class="muted"></p>
-            <div id="alignPad" class="align-pad" title="이미지→셀 정렬"></div>
 
             <div class="form-row inline-bg">
               <label class="checkbox-row">
@@ -131,6 +180,7 @@
         <div class="preview-head">
           <h2>미리보기</h2>
           <div class="preview-tools">
+            <button id="snapToggleBtn" type="button" class="toggle-btn active" title="자석 스냅">자석</button>
             <button id="zoomOutBtn" type="button" title="축소">−</button>
             <span id="zoomLabel" class="zoom-label">100%</span>
             <button id="zoomInBtn" type="button" title="확대">+</button>

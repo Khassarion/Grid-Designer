@@ -17,6 +17,11 @@
   box-sizing: border-box;
 }
 
+/* class { display:flex/grid } must not override the hidden attribute */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -50,6 +55,13 @@ button {
 
 button:hover {
   border-color: var(--accent);
+}
+
+button:disabled,
+button:disabled:hover {
+  opacity: 0.4;
+  cursor: not-allowed;
+  border-color: var(--border);
 }
 
 button.primary {
@@ -487,6 +499,12 @@ h2 {
   padding: 0.2rem 0.45rem;
 }
 
+.preview-tools .toggle-btn.active {
+  border-color: var(--accent);
+  background: #1a2a40;
+  color: #fff;
+}
+
 .zoom-label {
   min-width: 3.2em;
   text-align: center;
@@ -550,14 +568,15 @@ h2 {
 
 .grid-cell {
   position: absolute;
-  /* Images stay native size; do not clip them to a smaller cell box */
   overflow: visible;
+  pointer-events: none;
 }
 
 .grid-cell.interactive {
   outline: 1px solid rgba(255, 255, 255, 0.15);
   cursor: move;
   touch-action: none;
+  pointer-events: auto;
 }
 
 .grid-cell.interactive.selected {
@@ -576,14 +595,8 @@ h2 {
   position: absolute;
   left: 0;
   top: 0;
-  right: 0;
-  bottom: 0;
-  overflow: hidden;
+  overflow: visible;
   pointer-events: none;
-}
-
-.nested-stage.editable-stage {
-  pointer-events: auto;
 }
 
 .grid-cell.highlight-nested {
