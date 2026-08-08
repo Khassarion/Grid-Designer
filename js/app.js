@@ -1167,6 +1167,7 @@
         el.w.value = ch.frame.w;
         el.h.value = ch.frame.h;
       }
+      if (drag.mode === "resize") reflowIfLayout(ch.refId);
     }
     refreshPreview();
     e.preventDefault();
