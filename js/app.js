@@ -33,29 +33,34 @@
   var selectedChild = -1;
   /** Preview selection: canvas images + any layout frame { parentId, index } */
   var previewSel = { parentId: null, index: -1 };
-  var childDrag = -1;
+  /** Sibling reorder in hierarchy tree: { parentId, index } */
+  var childDrag = null;
+  /** Collapsed layout ids in hierarchy tree */
+  var collapsed = {};
   var maxZ = 1;
   var pngHandle = null;
   var zoom = 1;
   var drag = null;
   var snapEnabled = true;
   var SNAP_THRESH = 8;
+  var undoStack = [];
+  var MAX_UNDO = 50;
+  var undoSuspended = false;
+  var formUndoArmed = false;
 
   var el = {
     tree: $("layoutTree"),
-    kids: $("childList"),
-    kidHint: $("childHint"),
-    kidsPanel: $("childrenPanel"),
+    hierarchy: $("hierarchyPanel"),
     heading: $("settingsHeading"),
-    name: $("layoutName"),
+    noLayoutHint: $("noLayoutHint"),
+    layoutSettings: $("layoutSettingsBlock"),
     w: $("width"),
     h: $("height"),
-    wLabel: $("widthLabel"),
-    hLabel: $("heightLabel"),
+    canvasW: $("canvasWidth"),
+    canvasH: $("canvasHeight"),
     presets: $("canvasPresets"),
     layoutPresets: $("layoutPresets"),
     sizeLockHint: $("sizeLockHint"),
-    canvasHint: $("canvasHint"),
     gridSettings: $("gridSettingsBlock"),
     padL: $("padL"),
     padR: $("padR"),
@@ -254,7 +259,7 @@
     var gx = [0, ps.width, ps.width / 2];
     var gy = [0, ps.height, ps.height / 2];
     parent.children.forEach(function (ch, i) {
-      if (i === excludeIndex || !ch.frame || ch.type !== "layout") return;
+      if (i === excludeIndex || !ch.frame) return;
       var f = ch.frame;
       gx.push(f.x, f.x + f.w, f.x + f.w / 2);
       gy.push(f.y, f.y + f.h, f.y + f.h / 2);
@@ -333,13 +338,9 @@
   function syncChrome() {
     var isC = isCanvas(activeId);
     var locked = isSizeLocked(activeId);
-    el.heading.textContent = isC ? "캔버스 설정" : "레이아웃 설정";
-    el.wLabel.textContent = isC ? "캔버스 너비" : "레이아웃 너비";
-    el.hLabel.textContent = isC ? "캔버스 높이" : "레이아웃 높이";
-    el.presets.hidden = !isC;
+    if (el.layoutSettings) el.layoutSettings.hidden = !!isC;
+    if (el.noLayoutHint) el.noLayoutHint.hidden = !isC;
     if (el.layoutPresets) el.layoutPresets.hidden = isC || locked;
-    el.canvasHint.hidden = !isC;
-    el.gridSettings.hidden = isC;
     el.sizeLockHint.hidden = !locked;
     el.w.disabled = locked;
     el.h.disabled = locked;
@@ -360,11 +361,32 @@
     });
   }
 
+  function readCanvasSize() {
+    if (!canvasId || !layouts[canvasId]) return;
+    var s = ns(layouts[canvasId].settings);
+    el.canvasW.value = s.width;
+    el.canvasH.value = s.height;
+  }
+
+  function writeCanvasSize() {
+    if (!canvasId || !layouts[canvasId]) return;
+    var L = layouts[canvasId];
+    L.settings = ns(Object.assign({}, L.settings, {
+      width: Math.max(1, +el.canvasW.value || 1),
+      height: Math.max(1, +el.canvasH.value || 1),
+    }));
+    el.badge.textContent = "캔버스 " + L.settings.width + " × " + L.settings.height;
+  }
+
   function readForm() {
+    readCanvasSize();
     var L = lay();
     if (!L) return;
+    if (isCanvas(L.id)) {
+      syncChrome();
+      return;
+    }
     var s = ns(L.settings);
-    el.name.value = L.name;
     el.w.value = s.width;
     el.h.value = s.height;
     el.padL.value = s.pad_l;
@@ -388,20 +410,14 @@
   }
 
   function writeForm() {
+    writeCanvasSize();
     var L = lay();
-    if (!L) return;
-    L.name = el.name.value.trim() || L.name;
-    L.transparentBg = el.clearBg.checked;
-    L.bgColor = el.bg.value;
-
-    if (isCanvas(L.id)) {
-      L.settings = ns(Object.assign({}, L.settings, {
-        width: Math.max(1, +el.w.value || 1),
-        height: Math.max(1, +el.h.value || 1),
-      }));
+    if (!L || isCanvas(L.id)) {
       syncChrome();
       return;
     }
+    L.transparentBg = el.clearBg.checked;
+    L.bgColor = el.bg.value;
 
     var locked = isSizeLocked(L.id);
     var cur = ns(L.settings);
@@ -423,8 +439,6 @@
       constraint_count: +el.constraintCount.value || 1,
     });
     syncCanvasChildFrame(L.id);
-    // Nested under layout: keep parent frame in sync with settings when form size unlocked path N/A;
-    // size-locked layouts sync frame from settings only via reflow / mouse resize.
     if (!locked) {
       var pf = findParentFrame(L.id);
       if (pf) {
@@ -435,11 +449,20 @@
     syncChrome();
   }
 
+  function expandAncestors(id) {
+    var cur = layouts[id];
+    while (cur && cur.parentId) {
+      delete collapsed[cur.parentId];
+      cur = layouts[cur.parentId];
+    }
+  }
+
   function selectLayout(id) {
     if (!layouts[id]) return;
     writeForm();
     activeId = id;
     selectedChild = -1;
+    expandAncestors(id);
     if (id !== canvasId && layouts[id].parentId) {
       var kids = layouts[layouts[id].parentId].children;
       for (var i = 0; i < kids.length; i++) {
@@ -455,91 +478,133 @@
     refresh();
   }
 
-  function renderTree() {
-    var ordered = [];
-    var depth = {};
-    function walk(id, d) {
-      ordered.push(id);
-      depth[id] = d;
-      (layouts[id].children || []).forEach(function (ch) {
-        if (ch.type === "layout" && layouts[ch.refId]) walk(ch.refId, d + 1);
-      });
+  function selectChildNode(parentId, index) {
+    var parent = layouts[parentId];
+    if (!parent || !parent.children[index]) return;
+    writeForm();
+    var ch = parent.children[index];
+    if (ch.type === "layout" && layouts[ch.refId]) {
+      selectLayout(ch.refId);
+      return;
     }
-    walk(canvasId, 0);
-    el.tree.replaceChildren();
-    ordered.forEach(function (id) {
-      var L = layouts[id];
-      var li = document.createElement("li");
-      li.className = "tree-item" + (id === activeId ? " active" : "");
-      var indent = Array(depth[id] + 1).join("· ");
-      li.innerHTML =
-        '<div class="name"><span class="depth">' + indent + "</span>" +
-        L.name.replace(/</g, "&lt;") +
-        (id === canvasId ? ' <span class="root-badge">캔버스</span>' : "") +
-        '</div><div class="muted">' + L.children.length + " items</div>";
-      li.onclick = function () { selectLayout(id); };
-      el.tree.appendChild(li);
-    });
+    activeId = parentId;
+    selectedChild = index;
+    expandAncestors(parentId);
+    previewSel = isInteractiveChild(parentId, ch)
+      ? { parentId: parentId, index: index }
+      : { parentId: null, index: -1 };
+    readForm();
+    refresh();
   }
 
-  function renderKids() {
-    var L = lay();
-    el.kids.replaceChildren();
-    if (!L) return;
-    el.kidHint.textContent = L.children.length + "개";
-    L.children.forEach(function (ch, i) {
-      var li = document.createElement("li");
-      li.className = "child-item" + (ch.type === "layout" ? " layout-child" : "") +
-        (i === selectedChild ? " selected" : "");
-      li.draggable = true;
-      var mark = document.createElement("input");
-      mark.type = "radio";
-      mark.name = "kid";
-      mark.checked = i === selectedChild;
-      mark.onchange = function () {
-        selectedChild = i;
-        previewSel = isInteractiveChild(L.id, ch) ? { parentId: L.id, index: i } : { parentId: null, index: -1 };
-        renderKids();
-        refreshPreview();
-      };
+  function bindSiblingDrag(li, parentId, index) {
+    li.draggable = true;
+    li.ondragstart = function (e) {
+      childDrag = { parentId: parentId, index: index };
+      li.classList.add("dragging");
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+    };
+    li.ondragend = function () {
+      childDrag = null;
+      li.classList.remove("dragging");
+    };
+    li.ondragover = function (e) {
+      if (!childDrag || childDrag.parentId !== parentId) return;
+      e.preventDefault();
+      li.classList.add("drag-over");
+    };
+    li.ondragleave = function () { li.classList.remove("drag-over"); };
+    li.ondrop = function (e) {
+      e.preventDefault();
+      li.classList.remove("drag-over");
+      if (!childDrag || childDrag.parentId !== parentId || childDrag.index === index) return;
+      var parent = layouts[parentId];
+      if (!parent) return;
+      pushUndo();
+      var moved = parent.children.splice(childDrag.index, 1)[0];
+      parent.children.splice(index, 0, moved);
+      if (activeId === parentId) selectedChild = index;
+      if (!isCanvas(parentId)) reflow(parent);
+      refresh();
+    };
+  }
 
-      if (ch.type === "image" && images[ch.refId]) {
-        var thumb = document.createElement("img");
-        thumb.src = images[ch.refId].url;
-        var nm = document.createElement("div");
-        nm.className = "name";
-        nm.textContent = images[ch.refId].name;
-        li.append(mark, thumb, nm);
-      } else if (ch.type === "layout" && layouts[ch.refId]) {
-        var nm2 = document.createElement("div");
-        nm2.className = "name";
-        nm2.textContent = "▦ " + layouts[ch.refId].name;
-        li.append(mark, nm2);
-        li.ondblclick = function () { selectLayout(ch.refId); };
-      }
+  function renderTree() {
+    el.tree.replaceChildren();
+    if (!canvasId || !layouts[canvasId]) return;
 
-      li.onclick = function (e) {
-        if (e.target === mark) return;
-        selectedChild = i;
-        previewSel = isInteractiveChild(L.id, ch) ? { parentId: L.id, index: i } : { parentId: null, index: -1 };
-        renderKids();
-        refreshPreview();
-      };
-      li.ondragstart = function () { childDrag = i; li.classList.add("dragging"); };
-      li.ondragend = function () { childDrag = -1; li.classList.remove("dragging"); };
-      li.ondragover = function (e) { e.preventDefault(); li.classList.add("drag-over"); };
-      li.ondragleave = function () { li.classList.remove("drag-over"); };
-      li.ondrop = function (e) {
-        e.preventDefault();
-        li.classList.remove("drag-over");
-        if (childDrag < 0 || childDrag === i) return;
-        var m = L.children.splice(childDrag, 1)[0];
-        L.children.splice(i, 0, m);
-        selectedChild = i;
-        refresh();
-      };
-      el.kids.appendChild(li);
-    });
+    function appendChildren(parentId, depth) {
+      var parent = layouts[parentId];
+      if (!parent) return;
+      parent.children.forEach(function (ch, i) {
+        var li = document.createElement("li");
+        var pad = document.createElement("span");
+        pad.className = "tree-pad";
+        pad.style.width = depth * 12 + "px";
+
+        if (ch.type === "layout" && layouts[ch.refId]) {
+          var L = layouts[ch.refId];
+          var layActive = activeId === L.id && selectedChild < 0;
+          var hasKids = L.children.length > 0;
+          var isClosed = !!collapsed[L.id];
+          li.className = "tree-item tree-layout" + (layActive ? " active" : "") +
+            (isClosed ? " collapsed" : "");
+
+          var twist = document.createElement("button");
+          twist.type = "button";
+          twist.className = "tree-twist" + (hasKids ? "" : " empty");
+          twist.title = hasKids ? (isClosed ? "펼치기" : "접기") : "";
+          twist.textContent = hasKids ? (isClosed ? "▶" : "▼") : "·";
+          twist.disabled = !hasKids;
+          twist.onclick = function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!hasKids) return;
+            if (collapsed[L.id]) delete collapsed[L.id];
+            else collapsed[L.id] = true;
+            renderTree();
+          };
+
+          var nm = document.createElement("div");
+          nm.className = "name";
+          nm.textContent = "▦ " + L.name;
+
+          var meta = document.createElement("div");
+          meta.className = "muted";
+          meta.textContent = String(L.children.length);
+
+          li.append(pad, twist, nm, meta);
+          li.onclick = function () { selectLayout(L.id); };
+          bindSiblingDrag(li, parentId, i);
+          el.tree.appendChild(li);
+          if (!isClosed) appendChildren(L.id, depth + 1);
+          return;
+        }
+
+        if (ch.type === "image") {
+          var imgActive = activeId === parentId && selectedChild === i;
+          var entry = images[ch.refId];
+          li.className = "tree-item tree-image" + (imgActive ? " active" : "");
+
+          var spacer = document.createElement("span");
+          spacer.className = "tree-twist empty";
+          spacer.textContent = "·";
+
+          var thumb = document.createElement("img");
+          thumb.alt = "";
+          if (entry) thumb.src = entry.url;
+          var inm = document.createElement("div");
+          inm.className = "name";
+          inm.textContent = entry ? entry.name : "(이미지)";
+          li.append(pad, spacer, thumb, inm);
+          li.onclick = function () { selectChildNode(parentId, i); };
+          bindSiblingDrag(li, parentId, i);
+          el.tree.appendChild(li);
+        }
+      });
+    }
+
+    appendChildren(canvasId, 0);
   }
 
   function paint(container, layoutId, depth, highlightId) {
@@ -552,15 +617,6 @@
     container.style.height = s.height + "px";
     container.style.background = L.transparentBg !== false ? "transparent" : (L.bgColor || "#000");
     container.replaceChildren();
-    if (isCanvas(layoutId)) {
-      container.classList.add("editable-stage");
-      ["e", "s", "se"].forEach(function (h) {
-        var d = document.createElement("div");
-        d.className = "canvas-handle " + h;
-        d.dataset.canvasHandle = h;
-        container.appendChild(d);
-      });
-    }
 
     byZ(L).forEach(function (i) {
       var ch = L.children[i];
@@ -647,6 +703,8 @@
   }
 
   function applyZoom() {
+    // zoom=1 → canvas fully visible (fit). Do not allow smaller than that.
+    zoom = Math.min(8, Math.max(1, zoom));
     var s = ns(layouts[canvasId].settings);
     var fit = Math.min(1, el.wrap.clientWidth / s.width, el.wrap.clientHeight / s.height) || 1;
     var sc = fit * zoom;
@@ -658,6 +716,7 @@
     el.zoomLabel.textContent = Math.round(zoom * 100) + "%";
     var editName = activeId !== canvasId && layouts[activeId] ? layouts[activeId].name : "캔버스";
     el.meta.textContent = "캔버스 " + s.width + "×" + s.height + " · 편집: " + editName;
+    if ($("zoomOutBtn")) $("zoomOutBtn").disabled = zoom <= 1;
     syncChrome();
   }
 
@@ -669,7 +728,6 @@
 
   function refresh() {
     renderTree();
-    renderKids();
     refreshPreview();
   }
 
@@ -681,6 +739,7 @@
     var L = lay();
     if (!L) return status("레이아웃을 먼저 선택하세요.", "err");
 
+    pushUndo();
     var chain = Promise.resolve();
     var added = [];
     files.forEach(function (file) {
@@ -700,6 +759,10 @@
       });
     });
     chain.then(function () {
+      if (!added.length) {
+        if (undoStack.length) undoStack.pop();
+        return;
+      }
       var start = L.children.length;
       if (isCanvas(L.id)) {
         added.forEach(function (id, off) {
@@ -727,7 +790,10 @@
       }
       refresh();
       status(files.length + "개 이미지 추가됨", "ok");
-    }).catch(function (e) { status(String(e.message || e), "err"); });
+    }).catch(function (e) {
+      if (undoStack.length) undoStack.pop();
+      status(String(e.message || e), "err");
+    });
   }
 
   function bindDrop(node) {
@@ -750,15 +816,27 @@
 
   function idb(op, key, val) {
     return new Promise(function (resolve, reject) {
-      var req = indexedDB.open("obs-grid-designer", 1);
-      req.onupgradeneeded = function () { req.result.createObjectStore("handles"); };
+      // Do not pass a fixed version — opening with a lower version than the
+      // existing DB throws VersionError ("requested version (1) < existing (2)").
+      var req = indexedDB.open("obs-grid-designer");
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains("handles")) db.createObjectStore("handles");
+      };
       req.onerror = function () { reject(req.error); };
       req.onsuccess = function () {
-        var tx = req.result.transaction("handles", op === "get" ? "readonly" : "readwrite");
+        var db = req.result;
+        if (!db.objectStoreNames.contains("handles")) {
+          db.close();
+          reject(new Error("handles store missing"));
+          return;
+        }
+        var tx = db.transaction("handles", op === "get" ? "readonly" : "readwrite");
         var store = tx.objectStore("handles");
         var r = op === "get" ? store.get(key) : store.put(val, key);
         r.onsuccess = function () { resolve(op === "get" ? r.result || null : null); };
         r.onerror = function () { reject(r.error); };
+        tx.oncomplete = function () { db.close(); };
       };
     });
   }
@@ -782,27 +860,40 @@
       status("다운로드로 저장됨", "err");
       return Promise.resolve();
     }
-    function write(handle) {
+    function ensurePermission(handle) {
       return handle.queryPermission({ mode: "readwrite" }).then(function (st) {
-        return st === "granted" ? true : handle.requestPermission({ mode: "readwrite" }).then(function (n) {
+        if (st === "granted") return true;
+        return handle.requestPermission({ mode: "readwrite" }).then(function (n) {
           return n === "granted";
         });
-      }).then(function (ok) {
+      });
+    }
+    function writeBlob(handle) {
+      return ensurePermission(handle).then(function (ok) {
         if (!ok) throw new Error("쓰기 권한 없음");
         return handle.createWritable().then(function (w) {
           return w.write(blob).then(function () { return w.close(); });
         });
-      }).then(function () {
-        pngHandle = handle;
-        return idb("put", "png", handle).then(function () {
-          hint();
-          return handle.name;
-        });
       });
     }
-    return pngHandle
-      ? write(pngHandle).catch(function () { return pickPng().then(write); })
-      : pickPng().then(write);
+    function remember(handle) {
+      pngHandle = handle;
+      hint();
+      // Persist handle for next visit — failure must not look like a save failure
+      // (old code re-opened the file picker after a successful write).
+      return idb("put", "png", handle).catch(function () { return null; }).then(function () {
+        return handle.name;
+      });
+    }
+    function write(handle) {
+      return writeBlob(handle).then(function () { return remember(handle); });
+    }
+    if (!pngHandle) return pickPng().then(write);
+    return write(pngHandle).catch(function (e) {
+      if (e && e.name === "AbortError") throw e;
+      // Permission lost / handle stale → ask for a path again
+      return pickPng().then(write);
+    });
   }
 
   function exportPng() {
@@ -849,6 +940,67 @@
     return out;
   }
 
+  function snapshotState() {
+    return {
+      layouts: cloneLayoutsMap(layouts),
+      canvasId: canvasId,
+      activeId: activeId,
+      selectedChild: selectedChild,
+      previewSel: { parentId: previewSel.parentId, index: previewSel.index },
+      maxZ: maxZ,
+    };
+  }
+
+  function pushUndo() {
+    if (undoSuspended || !canvasId || !layouts[canvasId]) return;
+    writeForm();
+    undoStack.push(snapshotState());
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+  }
+
+  function restoreState(snap) {
+    if (!snap || !snap.layouts || !snap.canvasId) return;
+    undoSuspended = true;
+    layouts = cloneLayoutsMap(snap.layouts);
+    canvasId = snap.canvasId;
+    activeId = snap.activeId && layouts[snap.activeId] ? snap.activeId : canvasId;
+    selectedChild = typeof snap.selectedChild === "number" ? snap.selectedChild : -1;
+    previewSel = snap.previewSel
+      ? { parentId: snap.previewSel.parentId, index: snap.previewSel.index }
+      : { parentId: null, index: -1 };
+    maxZ = Math.max(1, +snap.maxZ || 1);
+    readCanvasSize();
+    readForm();
+    refresh();
+    undoSuspended = false;
+  }
+
+  function undo() {
+    if (!undoStack.length) {
+      status("되돌릴 작업이 없습니다.");
+      return;
+    }
+    restoreState(undoStack.pop());
+    status("실행 취소", "ok");
+  }
+
+  function clearUndo() {
+    undoStack = [];
+    formUndoArmed = false;
+  }
+
+  function armFormUndo() {
+    if (formUndoArmed || undoSuspended) return;
+    pushUndo();
+    formUndoArmed = true;
+  }
+
+  function isTypingTarget(t) {
+    if (!t || !t.tagName) return false;
+    var tag = t.tagName.toLowerCase();
+    return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable;
+  }
+
   function imageToDataUrl(entry) {
     if (entry.file) {
       return new Promise(function (resolve, reject) {
@@ -886,8 +1038,10 @@
     activeId = null;
     selectedChild = -1;
     previewSel = { parentId: null, index: -1 };
-    childDrag = -1;
+    childDrag = null;
+    collapsed = {};
     maxZ = 1;
+    clearUndo();
   }
 
   function collectUsedImageIds(rootId) {
@@ -978,6 +1132,7 @@
     });
     return chain.then(function () {
       clearProjectState();
+      clearUndo();
       layouts = nextLayouts;
       images = nextImages;
       canvasId = data.canvasId;
@@ -999,9 +1154,7 @@
   function saveProject() {
     status("구조 저장 중…");
     buildProject().then(function (project) {
-      var base = (layouts[canvasId] && layouts[canvasId].name) || "obs-grid";
-      var safe = String(base).replace(/[\\/:*?"<>|]+/g, "_").trim() || "obs-grid";
-      downloadJson(project, safe + "-structure.json");
+      downloadJson(project, "grid-composer-structure.json");
       var nLay = Object.keys(project.layouts).length;
       var nImg = Object.keys(project.images).length;
       status("구조 저장됨 (" + nLay + " 레이아웃, " + nImg + " 이미지)", "ok");
@@ -1040,25 +1193,25 @@
     reader.readAsText(file);
   }
 
+  function selectCanvasFromEmpty() {
+    // No layout selected in tree; images add as top-level siblings of layouts
+    if (activeId !== canvasId || previewSel.parentId != null || selectedChild >= 0) {
+      selectLayout(canvasId);
+    } else {
+      previewSel = { parentId: null, index: -1 };
+      selectedChild = -1;
+      refresh();
+    }
+  }
+
   // pointer — always edit canvas images + any layout frames (not layout-owned images)
   el.stage.addEventListener("mousedown", function (e) {
     if (e.button) return;
+    // Prevent wrap "outside click" handler: refreshPreview() detaches the target,
+    // so wrap would see a detached node and wrongly select the canvas.
+    e.stopPropagation();
     writeForm();
     var t = e.target;
-    if (t.dataset && t.dataset.canvasHandle) {
-      var p = toLocal(e.clientX, e.clientY, canvasId);
-      var cs = ns(layouts[canvasId].settings);
-      drag = {
-        mode: "canvas",
-        layoutId: canvasId,
-        handle: t.dataset.canvasHandle,
-        x0: p.x,
-        y0: p.y,
-        orig: { w: cs.width, h: cs.height },
-      };
-      e.preventDefault();
-      return;
-    }
     var handle = t.closest && t.closest(".resize-handle");
     var cell = t.closest && t.closest(".grid-cell.interactive");
     if (cell) {
@@ -1078,19 +1231,22 @@
           activeId = ch.refId;
           selectedChild = -1;
           readForm();
-          renderTree();
+        } else {
+          selectedChild = -1;
         }
+        expandAncestors(ch.refId);
       } else {
-        if (activeId !== canvasId) {
-          activeId = canvasId;
+        if (activeId !== parentId) {
+          activeId = parentId;
           readForm();
-          renderTree();
         }
         selectedChild = idx;
+        expandAncestors(parentId);
       }
 
       var p2 = toLocal(e.clientX, e.clientY, parentId);
       var fr = ch.frame;
+      pushUndo();
       drag = {
         mode: handle ? "resize" : "move",
         layoutId: parentId,
@@ -1099,17 +1255,33 @@
         x0: p2.x,
         y0: p2.y,
         orig: { x: fr.x, y: fr.y, w: fr.w, h: fr.h },
+        undoPushed: true,
       };
       refreshPreview();
-      renderKids();
+      renderTree();
       e.preventDefault();
       return;
     }
-    previewSel = { parentId: null, index: -1 };
-    selectedChild = -1;
-    refreshPreview();
-    renderKids();
+    selectCanvasFromEmpty();
+    e.preventDefault();
   });
+
+  // Click outside the canvas (black preview area) → same as empty canvas click
+  el.wrap.addEventListener("mousedown", function (e) {
+    if (e.button) return;
+    if (e.target !== el.wrap && e.target !== el.shell && e.target !== el.badge) return;
+    selectCanvasFromEmpty();
+  });
+
+  // Empty space in hierarchy panel → select canvas
+  if (el.hierarchy) {
+    el.hierarchy.addEventListener("mousedown", function (e) {
+      if (e.button) return;
+      if (e.target.closest && e.target.closest(".tree-item")) return;
+      if (e.target.closest && e.target.closest("button, label, input, select, a")) return;
+      selectCanvasFromEmpty();
+    });
+  }
 
   window.addEventListener("mousemove", function (e) {
     if (!drag) return;
@@ -1117,20 +1289,6 @@
     if (!L) return;
     var p = toLocal(e.clientX, e.clientY, drag.layoutId);
     var dx = p.x - drag.x0, dy = p.y - drag.y0;
-    if (drag.mode === "canvas") {
-      var nw = drag.orig.w, nh = drag.orig.h;
-      if (drag.handle.indexOf("e") >= 0) nw = Math.max(64, drag.orig.w + dx);
-      if (drag.handle.indexOf("s") >= 0) nh = Math.max(64, drag.orig.h + dy);
-      L.settings.width = Math.round(nw);
-      L.settings.height = Math.round(nh);
-      if (activeId === canvasId) {
-        el.w.value = L.settings.width;
-        el.h.value = L.settings.height;
-      }
-      refreshPreview();
-      e.preventDefault();
-      return;
-    }
     var ch = L.children[drag.index];
     if (!ch || !ch.frame) return;
     var o = drag.orig, x = o.x, y = o.y, w = o.w, h = o.h;
@@ -1146,7 +1304,7 @@
       if (w < 24) { if (hd.indexOf("w") >= 0) x = o.x + o.w - 24; w = 24; }
       if (h < 24) { if (hd.indexOf("n") >= 0) y = o.y + o.h - 24; h = 24; }
     }
-    if (snapEnabled && ch.type === "layout") {
+    if (snapEnabled) {
       var guides = collectSnapGuides(drag.layoutId, drag.index);
       var snapped = drag.mode === "move"
         ? snapMoveRect(x, y, w, h, guides, SNAP_THRESH)
@@ -1177,13 +1335,17 @@
     if (!drag) return;
     var finished = drag;
     drag = null;
-    if (finished.mode === "resize") {
-      var PL = layouts[finished.layoutId];
-      var pch = PL && PL.children[finished.index];
-      if (pch && pch.type === "layout") reflowIfLayout(pch.refId);
-    }
+    var PL = layouts[finished.layoutId];
+    var pch = PL && PL.children[finished.index];
+    var fr = pch && pch.frame;
+    var o = finished.orig;
+    var changed = !!(fr && o && (
+      fr.x !== o.x || fr.y !== o.y || fr.w !== o.w || fr.h !== o.h
+    ));
+    if (!changed && finished.undoPushed && undoStack.length) undoStack.pop();
+    if (finished.mode === "resize" && pch && pch.type === "layout") reflowIfLayout(pch.refId);
     refresh();
-    status("프레임 수정됨", "ok");
+    if (changed) status("프레임 수정됨", "ok");
   });
 
   // wire
@@ -1195,6 +1357,7 @@
     b.title = k;
     b.onclick = function () {
       if (isCanvas(activeId)) return;
+      pushUndo();
       el.childAlign.value = k;
       writeForm();
       reflow(lay());
@@ -1207,7 +1370,12 @@
     var parent = lay();
     if (!parent) return;
     writeForm();
-    var id = makeLayout(parent.name + " / Child", parent.id);
+    pushUndo();
+    var layoutCount = parent.children.filter(function (ch) { return ch.type === "layout"; }).length;
+    var id = makeLayout(
+      isCanvas(parent.id) ? ("Layout " + (layoutCount + 1)) : (parent.name + " / Child"),
+      parent.id
+    );
     if (isCanvas(parent.id)) {
       layouts[id].settings.width = 960;
       layouts[id].settings.height = 540;
@@ -1227,9 +1395,9 @@
     selectLayout(id);
   };
 
-  $("deleteLayoutBtn").onclick = function () {
-    if (!activeId || activeId === canvasId) return status("캔버스는 삭제할 수 없습니다.", "err");
-    var id = activeId, parentId = layouts[id].parentId;
+  function deleteLayoutById(id) {
+    if (!id || id === canvasId || !layouts[id]) return false;
+    var parentId = layouts[id].parentId;
     Object.keys(layouts).forEach(function (lid) {
       layouts[lid].children = layouts[lid].children.filter(function (ch) {
         return !(ch.type === "layout" && ch.refId === id);
@@ -1238,22 +1406,46 @@
     delete layouts[id];
     if (parentId && layouts[parentId] && !isCanvas(parentId)) reflow(layouts[parentId]);
     selectLayout(parentId && layouts[parentId] ? parentId : canvasId);
-  };
+    return true;
+  }
 
-  $("removeChildBtn").onclick = function () {
+  function removeSelected() {
     var L = lay();
-    if (!L || selectedChild < 0) return;
-    L.children.splice(selectedChild, 1);
-    selectedChild = -1;
-    previewSel = { parentId: null, index: -1 };
-    if (!isCanvas(L.id)) reflow(L);
-    refresh();
-  };
+    if (!L) return false;
+    if (selectedChild >= 0) {
+      var ch = L.children[selectedChild];
+      pushUndo();
+      if (ch && ch.type === "layout" && ch.refId) {
+        deleteLayoutById(ch.refId);
+        status("레이아웃 제거됨", "ok");
+        return true;
+      }
+      L.children.splice(selectedChild, 1);
+      selectedChild = -1;
+      previewSel = { parentId: null, index: -1 };
+      if (!isCanvas(L.id)) reflow(L);
+      refresh();
+      status("이미지 제거됨", "ok");
+      return true;
+    }
+    if (isCanvas(L.id)) {
+      status("제거할 항목을 선택하세요.", "err");
+      return false;
+    }
+    pushUndo();
+    deleteLayoutById(L.id);
+    status("레이아웃 제거됨", "ok");
+    return true;
+  }
+
+  $("removeNodeBtn").onclick = function () { removeSelected(); };
 
   $("clearChildrenBtn").onclick = function () {
     var L = lay();
     if (!L || !L.children.length) return;
-    if (!confirm("자식 항목을 모두 제거할까요?")) return;
+    var label = isCanvas(L.id) ? "캔버스" : ("'" + L.name + "'");
+    if (!confirm(label + "의 자식 항목을 모두 제거할까요?")) return;
+    pushUndo();
     L.children = [];
     selectedChild = -1;
     previewSel = { parentId: null, index: -1 };
@@ -1265,6 +1457,7 @@
     var L = lay();
     if (!L || isCanvas(L.id)) return status("캔버스에는 격자가 없습니다. 레이아웃을 선택하세요.", "err");
     writeForm();
+    pushUndo();
     reflow(L);
     selectedChild = -1;
     refresh();
@@ -1272,38 +1465,65 @@
   };
 
   var formKeys = [
-    el.name, el.padL, el.padR, el.padT, el.padB,
+    el.padL, el.padR, el.padT, el.padB,
     el.cellW, el.cellH, el.spacingX, el.spacingY,
     el.startCorner, el.startAxis, el.childAlign,
     el.constraint, el.constraintCount,
+    el.w, el.h, el.canvasW, el.canvasH, el.clearBg, el.bg,
   ];
   formKeys.forEach(function (node) {
+    if (!node) return;
+    node.addEventListener("focus", armFormUndo);
+    node.addEventListener("blur", function () { formUndoArmed = false; });
+  });
+
+  [el.padL, el.padR, el.padT, el.padB,
+    el.cellW, el.cellH, el.spacingX, el.spacingY,
+    el.startCorner, el.startAxis, el.childAlign,
+    el.constraint, el.constraintCount,
+  ].forEach(function (node) {
     ["input", "change"].forEach(function (ev) {
       node.addEventListener(ev, function () {
+        if (isCanvas(activeId)) return;
         writeForm();
-        if (node !== el.name && !isCanvas(activeId)) reflow(lay());
+        reflow(lay());
         refresh();
       });
     });
   });
 
-  function onSizeFieldChange() {
+  function onLayoutSizeChange() {
+    if (isCanvas(activeId) || isSizeLocked(activeId)) return;
     writeForm();
-    if (!isCanvas(activeId) && !isSizeLocked(activeId)) reflow(lay());
+    reflow(lay());
     refresh();
   }
   [el.w, el.h].forEach(function (inp) {
-    inp.addEventListener("change", onSizeFieldChange);
-    inp.addEventListener("input", onSizeFieldChange);
+    inp.addEventListener("change", onLayoutSizeChange);
+    inp.addEventListener("input", onLayoutSizeChange);
+  });
+
+  function onCanvasSizeChange() {
+    writeCanvasSize();
+    refreshPreview();
+  }
+  [el.canvasW, el.canvasH].forEach(function (inp) {
+    inp.addEventListener("change", onCanvasSizeChange);
+    inp.addEventListener("input", onCanvasSizeChange);
   });
 
   el.clearBg.onchange = function () {
+    if (isCanvas(activeId)) return;
     el.bg.disabled = el.clearBg.checked;
     el.bgRow.style.opacity = el.clearBg.checked ? "0.5" : "1";
     writeForm();
     refreshPreview();
   };
-  el.bg.oninput = function () { writeForm(); refreshPreview(); };
+  el.bg.oninput = function () {
+    if (isCanvas(activeId)) return;
+    writeForm();
+    refreshPreview();
+  };
 
   if (el.snapBtn) {
     el.snapBtn.onclick = function () {
@@ -1315,7 +1535,7 @@
   }
 
   $("zoomInBtn").onclick = function () { zoom = Math.min(8, zoom * 1.2); applyZoom(); };
-  $("zoomOutBtn").onclick = function () { zoom = Math.max(0.25, zoom / 1.2); applyZoom(); };
+  $("zoomOutBtn").onclick = function () { zoom = Math.max(1, zoom / 1.2); applyZoom(); };
   $("zoomResetBtn").onclick = function () {
     zoom = 1;
     applyZoom();
@@ -1326,7 +1546,8 @@
     var r = el.wrap.getBoundingClientRect();
     var ax = e.clientX - r.left, ay = e.clientY - r.top;
     var prev = zoom;
-    zoom = Math.min(8, Math.max(0.25, zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+    zoom = Math.min(8, Math.max(1, zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+    if (zoom === prev) return;
     var ratio = zoom / prev;
     el.wrap.scrollLeft = (el.wrap.scrollLeft + ax) * ratio - ax;
     el.wrap.scrollTop = (el.wrap.scrollTop + ay) * ratio - ay;
@@ -1341,7 +1562,7 @@
     if (e.dataTransfer && e.dataTransfer.files) addFiles(e.dataTransfer.files);
   });
   bindDrop(el.wrap);
-  bindDrop(el.kidsPanel);
+  bindDrop(el.hierarchy);
 
   $("saveProjectBtn").onclick = saveProject;
   $("projectInput").onchange = function () {
@@ -1354,28 +1575,46 @@
     if (typeof window.showSaveFilePicker !== "function") return status("이 브라우저는 위치 고정을 지원하지 않습니다.", "err");
     pickPng().then(function (h) {
       pngHandle = h;
-      return idb("put", "png", h);
-    }).then(function () {
       el.paths.innerHTML = "PNG: <strong>" + pngHandle.name + "</strong>";
       status("PNG 위치: " + pngHandle.name, "ok");
+      return idb("put", "png", h).catch(function () { return null; });
     }).catch(function (e) {
       if (!e || e.name !== "AbortError") status(String((e && e.message) || e), "err");
     });
   };
 
-  document.querySelectorAll(".preset-size").forEach(function (btn) {
+  document.querySelectorAll(".canvas-preset").forEach(function (btn) {
     btn.onclick = function () {
-      if (!activeId || isSizeLocked(activeId)) return;
-      var forCanvas = !!(el.presets && el.presets.contains(btn));
-      var forLayout = !!(el.layoutPresets && el.layoutPresets.contains(btn));
-      if (forCanvas && !isCanvas(activeId)) return;
-      if (forLayout && isCanvas(activeId)) return;
+      pushUndo();
+      el.canvasW.value = btn.getAttribute("data-w");
+      el.canvasH.value = btn.getAttribute("data-h");
+      writeCanvasSize();
+      refreshPreview();
+    };
+  });
+  document.querySelectorAll(".layout-preset").forEach(function (btn) {
+    btn.onclick = function () {
+      if (!activeId || isCanvas(activeId) || isSizeLocked(activeId)) return;
+      pushUndo();
       el.w.value = btn.getAttribute("data-w");
       el.h.value = btn.getAttribute("data-h");
       writeForm();
-      if (forLayout && !isCanvas(activeId)) reflow(lay());
+      reflow(lay());
       refresh();
     };
+  });
+
+  window.addEventListener("keydown", function (e) {
+    if (isTypingTarget(e.target)) return;
+    if (e.key === "Delete") {
+      e.preventDefault();
+      removeSelected();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      undo();
+    }
   });
 
   window.addEventListener("resize", refreshPreview);

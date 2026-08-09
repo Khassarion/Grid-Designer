@@ -7,69 +7,69 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <header class="app-bar">
+      <div class="app-bar-left">
+        <span class="app-brand">Grid Composer</span>
+        <div class="app-bar-group" title="프로젝트 파일">
+          <label class="file-pick-label" for="projectInput">열기</label>
+          <input id="projectInput" class="file-input" type="file" accept="application/json,.json" />
+          <button id="saveProjectBtn" type="button">저장</button>
+        </div>
+      </div>
+      <div class="app-bar-center">
+        <div id="status" class="status">레이아웃을 구성하세요</div>
+        <p id="savePaths" class="hint app-bar-path"></p>
+      </div>
+      <div class="app-bar-right">
+        <button id="changePngPathBtn" type="button" title="PNG 저장 위치 변경">위치 변경</button>
+        <button id="exportPngBtn" class="primary" type="button">내보내기</button>
+      </div>
+    </header>
+
     <div class="layout layout-2">
       <!-- Combined sidebar -->
       <aside class="sidebar panel">
-        <div class="side-block side-layouts">
+        <div class="side-block side-hierarchy" id="hierarchyPanel">
           <div class="side-head">
-            <h2>레이아웃</h2>
-            <div class="actions tight">
-              <button id="addChildLayoutBtn" type="button" title="하위 레이아웃 추가">+ 하위</button>
-              <button id="deleteLayoutBtn" class="danger" type="button" title="삭제">삭제</button>
-            </div>
-          </div>
-          <ul id="layoutTree" class="tree-list"></ul>
-        </div>
-
-        <div class="side-block side-children" id="childrenPanel">
-          <div class="side-head">
-            <h2>자식</h2>
-            <span id="childHint" class="muted side-meta"></span>
+            <h2>계층 구조</h2>
           </div>
           <div class="actions tight wrap">
             <label class="file-pick-label primary-label" for="fileInput">이미지 추가</label>
             <input id="fileInput" class="file-input" type="file" accept="image/*" multiple />
+            <button id="addChildLayoutBtn" type="button" title="하위 레이아웃 추가">+ 하위</button>
             <button id="reflowGridBtn" type="button">격자</button>
-            <button id="removeChildBtn" class="danger" type="button">제거</button>
-            <button id="clearChildrenBtn" class="danger" type="button">전체</button>
+            <button id="removeNodeBtn" class="danger" type="button" title="선택 항목 제거">제거</button>
+            <button id="clearChildrenBtn" class="danger" type="button" title="선택 대상의 자식 전체 제거">전체</button>
           </div>
-          <ul id="childList" class="child-list"></ul>
+          <ul id="layoutTree" class="tree-list"></ul>
         </div>
 
         <div class="side-block side-settings">
           <div class="panel-scroll">
-            <h2 id="settingsHeading">캔버스 설정</h2>
-            <div class="form-row full">
-              <label for="layoutName">이름</label>
-              <input id="layoutName" type="text" value="Canvas" />
-            </div>
+            <h2 id="settingsHeading">레이아웃 설정</h2>
+            <p id="noLayoutHint" class="muted">캔버스 선택됨 · 이미지 추가 시 최상위 레이아웃과 형제로 들어갑니다. 미리보기 빈 곳을 클릭해도 여기로 옵니다.</p>
 
+            <div id="layoutSettingsBlock" hidden>
             <div class="form-grid" id="layoutSizeRow">
               <div class="form-row">
-                <label for="width" id="widthLabel">너비</label>
-                <input id="width" type="number" value="1920" min="1" />
+                <label for="width">너비</label>
+                <input id="width" type="number" value="960" min="1" />
               </div>
               <div class="form-row">
-                <label for="height" id="heightLabel">높이</label>
-                <input id="height" type="number" value="1080" min="1" />
+                <label for="height">높이</label>
+                <input id="height" type="number" value="540" min="1" />
               </div>
             </div>
-            <div class="actions tight wrap" id="canvasPresets">
-              <button type="button" class="preset-size" data-w="1920" data-h="1080">1920×1080</button>
-              <button type="button" class="preset-size" data-w="1280" data-h="720">1280×720</button>
-              <button type="button" class="preset-size" data-w="1080" data-h="1920">1080×1920</button>
-            </div>
-            <div class="actions tight wrap" id="layoutPresets" hidden>
-              <button type="button" class="preset-size" data-w="200" data-h="1080">200×1080</button>
-              <button type="button" class="preset-size" data-w="1920" data-h="160">1920×160</button>
-              <button type="button" class="preset-size" data-w="400" data-h="1080">400×1080</button>
+            <div class="actions tight wrap" id="layoutPresets">
+              <button type="button" class="preset-size layout-preset" data-w="200" data-h="1080">200×1080</button>
+              <button type="button" class="preset-size layout-preset" data-w="1920" data-h="160">1920×160</button>
+              <button type="button" class="preset-size layout-preset" data-w="400" data-h="1080">400×1080</button>
             </div>
             <p id="sizeLockHint" class="muted" hidden>부모 레이아웃 셀 크기로 고정</p>
-            <p id="canvasHint" class="muted">캔버스는 장면 컨테이너입니다. 격자 배치 없음 · 자식은 자유 배치</p>
 
             <div id="gridSettingsBlock">
               <h2>패딩</h2>
-              <div class="form-grid">
+              <div class="form-grid cols-4">
                 <div class="form-row">
                   <label for="padL">좌</label>
                   <input id="padL" type="number" value="0" min="0" />
@@ -163,22 +163,7 @@
                 <input id="bgColor" type="color" value="#000000" disabled />
               </div>
             </div>
-
-            <h2>구조</h2>
-            <div class="actions tight wrap">
-              <button id="saveProjectBtn" type="button">구조 저장</button>
-              <label class="file-pick-label" for="projectInput">구조 불러오기</label>
-              <input id="projectInput" class="file-input" type="file" accept="application/json,.json" />
             </div>
-            <p class="muted">캔버스·레이아웃·이미지를 JSON으로 저장해 다른 브라우저에서 불러올 수 있습니다.</p>
-
-            <h2>내보내기</h2>
-            <div class="actions tight wrap">
-              <button id="exportPngBtn" class="primary" type="button">PNG 저장</button>
-              <button id="changePngPathBtn" type="button">위치 변경</button>
-            </div>
-            <p id="savePaths" class="hint"></p>
-            <div id="status" class="status">레이아웃을 구성하세요</div>
           </div>
         </div>
       </aside>
@@ -187,6 +172,22 @@
       <section class="panel preview-panel">
         <div class="preview-head">
           <h2>미리보기</h2>
+          <div class="canvas-size-bar" title="캔버스 크기">
+            <label class="canvas-size-field">
+              <span>너비</span>
+              <input id="canvasWidth" type="number" value="1920" min="1" />
+            </label>
+            <span class="canvas-size-x">×</span>
+            <label class="canvas-size-field">
+              <span>높이</span>
+              <input id="canvasHeight" type="number" value="1080" min="1" />
+            </label>
+            <div class="actions tight wrap canvas-presets" id="canvasPresets">
+              <button type="button" class="preset-size canvas-preset" data-w="3840" data-h="2160">3840×2160</button>
+              <button type="button" class="preset-size canvas-preset" data-w="2560" data-h="1440">2560×1440</button>
+              <button type="button" class="preset-size canvas-preset" data-w="1920" data-h="1080">1920×1080</button>
+            </div>
+          </div>
           <div class="preview-tools">
             <button id="snapToggleBtn" type="button" class="toggle-btn active" title="자석 스냅">자석</button>
             <button id="zoomOutBtn" type="button" title="축소">−</button>
