@@ -15,13 +15,13 @@
     <header class="app-bar">
       <div class="app-bar-left">
         <span class="app-brand">Grid Composer</span>
-        <div class="app-bar-group" title="프로젝트 파일">
-          <label class="file-pick-label" for="projectInput">열기</label>
+        <div class="app-bar-group" data-i18n-title="projectGroupTitle">
+          <label class="file-pick-label" for="projectInput" data-i18n="open">열기</label>
           <input id="projectInput" class="file-input" type="file" accept="application/json,.json" />
-          <button id="saveProjectBtn" type="button">저장</button>
-          <label class="checkbox-row compact" for="saveWithImages" title="체크 시 JSON에 이미지 데이터 포함">
+          <button id="saveProjectBtn" type="button" data-i18n="save">저장</button>
+          <label class="checkbox-row compact" for="saveWithImages" data-i18n-title="includeImagesTitle">
             <input id="saveWithImages" type="checkbox" />
-            이미지 포함
+            <span data-i18n="includeImages">이미지 포함</span>
           </label>
         </div>
       </div>
@@ -30,12 +30,18 @@
         <p id="savePaths" class="hint app-bar-path"></p>
       </div>
       <div class="app-bar-right">
-        <label class="checkbox-row compact" for="autoExportPng" title="구조가 바뀔 때마다 PNG를 자동 저장합니다. 크기 조절은 끝난 뒤에만 저장합니다.">
-          <input id="autoExportPng" type="checkbox" />
-          자동 내보내기
+        <label class="lang-select-wrap" data-i18n-title="langTitle">
+          <select id="langSelect" aria-label="Language">
+            <option value="ko">한국어</option>
+            <option value="en">English</option>
+          </select>
         </label>
-        <button id="changePngPathBtn" type="button" title="PNG 저장 위치 변경">위치 변경</button>
-        <button id="exportPngBtn" class="primary" type="button">내보내기</button>
+        <label class="checkbox-row compact" for="autoExportPng" data-i18n-title="autoExportTitle">
+          <input id="autoExportPng" type="checkbox" />
+          <span data-i18n="autoExport">자동 내보내기</span>
+        </label>
+        <button id="changePngPathBtn" type="button" data-i18n="changePath" data-i18n-title="changePathTitle">위치 변경</button>
+        <button id="exportPngBtn" class="primary" type="button" data-i18n="exportPng">내보내기</button>
       </div>
     </header>
 
@@ -44,37 +50,37 @@
       <aside class="sidebar panel">
         <div class="side-block side-hierarchy" id="hierarchyPanel">
           <div class="side-head">
-            <h2>계층 구조</h2>
+            <h2 data-i18n="hierarchy">계층 구조</h2>
           </div>
           <div class="actions tight wrap">
             <div class="menu-drop" id="addMenu">
-              <button id="addMenuBtn" class="primary" type="button" aria-haspopup="true" aria-expanded="false">추가 ▾</button>
+              <button id="addMenuBtn" class="primary" type="button" aria-haspopup="true" aria-expanded="false" data-i18n="addMenu">추가 ▾</button>
               <div class="menu-drop-panel" id="addMenuPanel" hidden>
-                <label class="menu-drop-item" for="fileInput">이미지 추가</label>
-                <button id="addChildLayoutBtn" class="menu-drop-item" type="button">레이아웃 추가</button>
+                <label class="menu-drop-item" for="fileInput" data-i18n="addImage">이미지 추가</label>
+                <button id="addChildLayoutBtn" class="menu-drop-item" type="button" data-i18n="addLayout">레이아웃 추가</button>
               </div>
             </div>
             <input id="fileInput" class="file-input" type="file" accept="image/*" multiple />
-            <button id="reflowGridBtn" type="button">격자</button>
-            <button id="removeNodeBtn" class="danger" type="button" title="선택 항목 제거">제거</button>
-            <button id="clearChildrenBtn" class="danger" type="button" title="선택 대상의 자식 전체 제거">전체</button>
+            <button id="reflowGridBtn" type="button" data-i18n="reflow">격자</button>
+            <button id="removeNodeBtn" class="danger" type="button" data-i18n="remove" data-i18n-title="removeTitle">제거</button>
+            <button id="clearChildrenBtn" class="danger" type="button" data-i18n="clearAll" data-i18n-title="clearAllTitle">전체</button>
           </div>
           <ul id="layoutTree" class="tree-list"></ul>
         </div>
 
         <div class="side-block side-settings">
           <div class="panel-scroll">
-            <h2 id="settingsHeading">레이아웃 설정</h2>
-            <p id="noLayoutHint" class="muted">캔버스 선택됨 · 이미지 추가 시 최상위 레이아웃과 형제로 들어갑니다. 미리보기 빈 곳을 클릭해도 여기로 옵니다.</p>
+            <h2 id="settingsHeading" data-i18n="settingsHeading">레이아웃 설정</h2>
+            <p id="noLayoutHint" class="muted" data-i18n="noLayoutHint">캔버스 선택됨 · 이미지 추가 시 최상위 레이아웃과 형제로 들어갑니다. 미리보기 빈 곳을 클릭해도 여기로 옵니다.</p>
 
             <div id="layoutSettingsBlock" hidden>
             <div class="form-grid" id="layoutSizeRow">
               <div class="form-row">
-                <label for="width">너비</label>
+                <label for="width" data-i18n="width">너비</label>
                 <input id="width" type="number" value="960" min="1" />
               </div>
               <div class="form-row">
-                <label for="height">높이</label>
+                <label for="height" data-i18n="height">높이</label>
                 <input id="height" type="number" value="540" min="1" />
               </div>
             </div>
@@ -83,91 +89,91 @@
               <button type="button" class="preset-size layout-preset" data-w="1920" data-h="160">1920×160</button>
               <button type="button" class="preset-size layout-preset" data-w="400" data-h="1080">400×1080</button>
             </div>
-            <p id="sizeLockHint" class="muted" hidden>부모 레이아웃 셀 크기로 고정</p>
+            <p id="sizeLockHint" class="muted" hidden data-i18n="sizeLockHint">부모 레이아웃 셀 크기로 고정</p>
 
             <div id="gridSettingsBlock">
-              <h2>패딩</h2>
+              <h2 data-i18n="padding">패딩</h2>
               <div class="form-grid cols-4">
                 <div class="form-row">
-                  <label for="padL">좌</label>
+                  <label for="padL" data-i18n="padL">좌</label>
                   <input id="padL" type="number" value="0" min="0" />
                 </div>
                 <div class="form-row">
-                  <label for="padR">우</label>
+                  <label for="padR" data-i18n="padR">우</label>
                   <input id="padR" type="number" value="0" min="0" />
                 </div>
                 <div class="form-row">
-                  <label for="padT">상</label>
+                  <label for="padT" data-i18n="padT">상</label>
                   <input id="padT" type="number" value="0" min="0" />
                 </div>
                 <div class="form-row">
-                  <label for="padB">하</label>
+                  <label for="padB" data-i18n="padB">하</label>
                   <input id="padB" type="number" value="0" min="0" />
                 </div>
               </div>
 
-              <h2>셀 크기</h2>
+              <h2 data-i18n="cellSize">셀 크기</h2>
               <div class="form-grid">
                 <div class="form-row">
-                  <label for="cellW">가로</label>
+                  <label for="cellW" data-i18n="cellW">가로</label>
                   <input id="cellW" type="number" value="200" min="1" />
                 </div>
                 <div class="form-row">
-                  <label for="cellH">세로</label>
+                  <label for="cellH" data-i18n="cellH">세로</label>
                   <input id="cellH" type="number" value="160" min="1" />
                 </div>
               </div>
-              <p class="muted">고정 크기 · 이미지는 셀에 꽉 채움</p>
+              <p class="muted" data-i18n="cellHint">고정 크기 · 이미지는 셀에 꽉 채움</p>
 
-              <h2>스페이싱</h2>
+              <h2 data-i18n="spacing">스페이싱</h2>
               <div class="form-grid">
                 <div class="form-row">
-                  <label for="spacingX">가로</label>
+                  <label for="spacingX" data-i18n="spacingX">가로</label>
                   <input id="spacingX" type="number" value="0" />
                 </div>
                 <div class="form-row">
-                  <label for="spacingY">세로</label>
+                  <label for="spacingY" data-i18n="spacingY">세로</label>
                   <input id="spacingY" type="number" value="0" />
                 </div>
               </div>
-              <p class="muted">음수 가능 (겹침)</p>
+              <p class="muted" data-i18n="spacingHint">음수 가능 (겹침)</p>
 
-              <h2>배치</h2>
+              <h2 data-i18n="placement">배치</h2>
               <div class="form-grid">
                 <div class="form-row">
-                  <label for="startCorner">시작 코너</label>
+                  <label for="startCorner" data-i18n="startCorner">시작 코너</label>
                   <select id="startCorner">
-                    <option value="left-top">Left Top</option>
-                    <option value="right-top">Right Top</option>
-                    <option value="left-bottom">Left Bottom</option>
-                    <option value="right-bottom">Right Bottom</option>
+                    <option value="left-top" data-i18n="alignLeftTop">좌측 상단</option>
+                    <option value="right-top" data-i18n="alignRightTop">우측 상단</option>
+                    <option value="left-bottom" data-i18n="alignLeftBottom">좌측 하단</option>
+                    <option value="right-bottom" data-i18n="alignRightBottom">우측 하단</option>
                   </select>
                 </div>
                 <div class="form-row">
-                  <label for="startAxis">시작 축</label>
+                  <label for="startAxis" data-i18n="startAxis">시작 축</label>
                   <select id="startAxis">
-                    <option value="horizontal">수평</option>
-                    <option value="vertical">수직</option>
+                    <option value="horizontal" data-i18n="axisHorizontal">수평</option>
+                    <option value="vertical" data-i18n="axisVertical">수직</option>
                   </select>
                 </div>
                 <div class="form-row full">
-                  <label for="childAlign">자식 정렬</label>
+                  <label for="childAlign" data-i18n="childAlign">자식 정렬</label>
                   <select id="childAlign"></select>
                 </div>
               </div>
-              <p class="muted">자식 정렬 = 셀 그룹이 레이아웃 안 어디에 붙는지</p>
-              <div id="alignPad" class="align-pad" title="자식 정렬"></div>
+              <p class="muted" data-i18n="childAlignHint">자식 정렬 = 셀 그룹이 레이아웃 안 어디에 붙는지</p>
+              <div id="alignPad" class="align-pad" data-i18n-title="childAlign"></div>
 
-              <h2>제약</h2>
+              <h2 data-i18n="constraint">제약</h2>
               <div class="form-row full">
                 <select id="constraint">
-                  <option value="auto">자동</option>
-                  <option value="columns">열 개수</option>
-                  <option value="rows">행 개수</option>
+                  <option value="auto" data-i18n="constraintAuto">자동</option>
+                  <option value="columns" data-i18n="constraintColumns">열 개수</option>
+                  <option value="rows" data-i18n="constraintRows">행 개수</option>
                 </select>
               </div>
               <div class="form-row full" id="constraintCountRow" hidden>
-                <label for="constraintCount">개수</label>
+                <label for="constraintCount" data-i18n="constraintCount">개수</label>
                 <input id="constraintCount" type="number" value="4" min="1" max="64" />
               </div>
             </div>
@@ -175,7 +181,7 @@
             <div class="form-row inline-bg">
               <label class="checkbox-row">
                 <input id="transparentBg" type="checkbox" checked />
-                배경 투명
+                <span data-i18n="transparentBg">배경 투명</span>
               </label>
               <div id="bgColorRow" class="bg-color-inline">
                 <input id="bgColor" type="color" value="#000000" disabled />
@@ -189,15 +195,15 @@
       <!-- Preview -->
       <section class="panel preview-panel">
         <div class="preview-head">
-          <h2>미리보기</h2>
-          <div class="canvas-size-bar" title="캔버스 크기">
+          <h2 data-i18n="preview">미리보기</h2>
+          <div class="canvas-size-bar" data-i18n-title="canvasSizeTitle">
             <label class="canvas-size-field">
-              <span>너비</span>
+              <span data-i18n="width">너비</span>
               <input id="canvasWidth" type="number" value="1920" min="1" />
             </label>
             <span class="canvas-size-x">×</span>
             <label class="canvas-size-field">
-              <span>높이</span>
+              <span data-i18n="height">높이</span>
               <input id="canvasHeight" type="number" value="1080" min="1" />
             </label>
             <div class="actions tight wrap canvas-presets" id="canvasPresets">
@@ -207,15 +213,15 @@
             </div>
           </div>
           <div class="preview-tools">
-            <button id="snapToggleBtn" type="button" class="toggle-btn active" title="자석 스냅">자석</button>
-            <button id="zoomOutBtn" type="button" title="축소">−</button>
+            <button id="snapToggleBtn" type="button" class="toggle-btn active" data-i18n="snap" data-i18n-title="snapTitle">자석</button>
+            <button id="zoomOutBtn" type="button" data-i18n-title="zoomOut">−</button>
             <span id="zoomLabel" class="zoom-label">100%</span>
-            <button id="zoomInBtn" type="button" title="확대">+</button>
-            <button id="zoomResetBtn" type="button" title="맞춤">맞춤</button>
+            <button id="zoomInBtn" type="button" data-i18n-title="zoomIn">+</button>
+            <button id="zoomResetBtn" type="button" data-i18n="zoomFit" data-i18n-title="zoomFit">맞춤</button>
           </div>
         </div>
         <p id="previewMeta" class="muted"></p>
-          <div class="preview-wrap" id="previewWrap" title="스크롤 휠로 확대/축소 · 레이아웃 위에 이미지 드롭으로 추가">
+          <div class="preview-wrap" id="previewWrap" data-i18n-title="previewDropTitle">
           <div id="previewShell" class="preview-shell">
             <div id="previewStage" class="preview-stage"></div>
             <div id="canvasSizeBadge" class="canvas-size-badge" aria-hidden="true"></div>
@@ -226,6 +232,7 @@
 
     <canvas id="exportCanvas" hidden></canvas>
     <script src="js/grid.js"></script>
+    <script src="js/i18n.js"></script>
     <script src="js/app.js"></script>
   </body>
 </html>
