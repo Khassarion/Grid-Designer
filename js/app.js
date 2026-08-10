@@ -1,6 +1,9 @@
 /**
  * OBS Grid Designer — canvas (scene) + nested layouts → PNG
  *
+ * Copyright (c) 2026 AINukeHere
+ * SPDX-License-Identifier: LicenseRef-GridComposer-Proprietary
+ *
  * Canvas = free container (like OBS scene). No grid.
  * Layout = grid. Nested under a layout: size locked to parent cell, content 1:1 (no squash).
  */
@@ -47,6 +50,13 @@
   var MAX_UNDO = 50;
   var undoSuspended = false;
   var formUndoArmed = false;
+  /** Internal clipboard for layout subtree / image child */
+  var clip = null;
+  /** Double-click rename detection: { id, t } */
+  var renameClick = null;
+  var autoExportTimer = null;
+  var autoExportBusy = false;
+  var autoExportPending = false;
 
   var el = {
     tree: $("layoutTree"),
@@ -91,6 +101,7 @@
     canvas: $("exportCanvas"),
     file: $("fileInput"),
     reflowBtn: $("reflowGridBtn"),
+    removeBtn: $("removeNodeBtn"),
     snapBtn: $("snapToggleBtn"),
   };
 
@@ -335,6 +346,11 @@
     });
   }
 
+  function canRemoveSelected() {
+    if (selectedChild >= 0) return true;
+    return !!(activeId && !isCanvas(activeId) && layouts[activeId]);
+  }
+
   function syncChrome() {
     var isC = isCanvas(activeId);
     var locked = isSizeLocked(activeId);
@@ -347,6 +363,11 @@
     if (el.reflowBtn) {
       el.reflowBtn.disabled = !!isC;
       el.reflowBtn.title = isC ? "캔버스에는 격자가 없습니다" : "격자 재배치";
+    }
+    if (el.removeBtn) {
+      var canRemove = canRemoveSelected();
+      el.removeBtn.disabled = !canRemove;
+      el.removeBtn.title = canRemove ? "선택 항목 제거" : "선택된 레이아웃 또는 이미지가 없습니다";
     }
     if (el.snapBtn) {
       el.snapBtn.classList.toggle("active", snapEnabled);
@@ -526,7 +547,59 @@
       if (activeId === parentId) selectedChild = index;
       if (!isCanvas(parentId)) reflow(parent);
       refresh();
+      requestAutoExport(true);
     };
+  }
+
+  function beginRenameLayout(layoutId) {
+    var L = layouts[layoutId];
+    if (!L) return;
+    var li = el.tree.querySelector('.tree-item.tree-layout[data-layout-id="' + layoutId + '"]');
+    if (!li) return;
+    var nameEl = li.querySelector(".name");
+    if (!nameEl || li.querySelector(".tree-rename")) return;
+
+    var done = false;
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "tree-rename";
+    input.value = L.name;
+    input.setAttribute("aria-label", "레이아웃 이름");
+
+    function finish(commit) {
+      if (done) return;
+      done = true;
+      var next = input.value.trim();
+      if (commit && next && next !== L.name) {
+        pushUndo();
+        L.name = next;
+        status("이름 변경됨", "ok");
+        renderTree();
+        requestAutoExport(true);
+        return;
+      }
+      li.draggable = true;
+      renderTree();
+    }
+
+    li.draggable = false;
+    nameEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    input.onkeydown = function (e) {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        finish(true);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        finish(false);
+      }
+    };
+    input.onmousedown = function (e) { e.stopPropagation(); };
+    input.onclick = function (e) { e.stopPropagation(); };
+    input.onblur = function () { finish(true); };
   }
 
   function renderTree() {
@@ -549,6 +622,7 @@
           var isClosed = !!collapsed[L.id];
           li.className = "tree-item tree-layout" + (layActive ? " active" : "") +
             (isClosed ? " collapsed" : "");
+          li.dataset.layoutId = L.id;
 
           var twist = document.createElement("button");
           twist.type = "button";
@@ -568,13 +642,33 @@
           var nm = document.createElement("div");
           nm.className = "name";
           nm.textContent = "▦ " + L.name;
+          nm.title = "더블클릭하여 이름 수정";
+          // First click re-renders the tree, so native dblclick never fires.
+          // Detect a second click on the same layout within the threshold instead.
+          nm.onclick = function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var now = Date.now();
+            if (renameClick && renameClick.id === L.id && now - renameClick.t < 400) {
+              renameClick = null;
+              if (!(activeId === L.id && selectedChild < 0)) selectLayout(L.id);
+              beginRenameLayout(L.id);
+              return;
+            }
+            renameClick = { id: L.id, t: now };
+            // Avoid re-render when already selected so the second click can hit the same node
+            if (!(activeId === L.id && selectedChild < 0)) selectLayout(L.id);
+          };
 
           var meta = document.createElement("div");
           meta.className = "muted";
           meta.textContent = String(L.children.length);
 
           li.append(pad, twist, nm, meta);
-          li.onclick = function () { selectLayout(L.id); };
+          li.onclick = function () {
+            renameClick = null;
+            selectLayout(L.id);
+          };
           bindSiblingDrag(li, parentId, i);
           el.tree.appendChild(li);
           if (!isClosed) appendChildren(L.id, depth + 1);
@@ -731,12 +825,73 @@
     refreshPreview();
   }
 
-  function addFiles(list) {
+  /** Deepest layout under a client point in the preview (for file drops). */
+  function layoutIdAtClient(clientX, clientY) {
+    var node = document.elementFromPoint(clientX, clientY);
+    if (!node || !el.wrap.contains(node)) return null;
+    if (!el.stage.contains(node) && node !== el.stage) return canvasId;
+    var cell = node.closest && node.closest(".grid-cell");
+    if (cell && el.stage.contains(cell)) {
+      var parentId = cell.dataset.parentId;
+      var idx = +cell.dataset.childIndex;
+      var parent = layouts[parentId];
+      var ch = parent && parent.children[idx];
+      if (ch && ch.type === "layout" && layouts[ch.refId]) return ch.refId;
+      if (ch) return parentId;
+    }
+    var host = node.closest && node.closest("[data-layout-id]");
+    if (host && host.dataset.layoutId && layouts[host.dataset.layoutId]) {
+      return host.dataset.layoutId;
+    }
+    return canvasId;
+  }
+
+  function dropTargetNode(layoutId) {
+    if (!layoutId || !layouts[layoutId]) return null;
+    if (layoutId === canvasId) return el.stage;
+    var nested = el.stage.querySelector('.nested-stage[data-layout-id="' + layoutId + '"]');
+    if (nested) {
+      var parentCell = nested.parentElement;
+      if (parentCell && parentCell.classList.contains("grid-cell")) return parentCell;
+      return nested;
+    }
+    var cells = el.stage.querySelectorAll(".grid-cell");
+    for (var i = 0; i < cells.length; i++) {
+      var pid = cells[i].dataset.parentId;
+      var idx = +cells[i].dataset.childIndex;
+      var ch = layouts[pid] && layouts[pid].children[idx];
+      if (ch && ch.type === "layout" && ch.refId === layoutId) return cells[i];
+    }
+    return null;
+  }
+
+  var dropHighlightId = null;
+
+  function clearDropHighlight() {
+    dropHighlightId = null;
+    el.stage.classList.remove("drop-target");
+    el.stage.querySelectorAll(".drop-target").forEach(function (n) {
+      n.classList.remove("drop-target");
+    });
+  }
+
+  function setDropHighlight(layoutId) {
+    if (layoutId === dropHighlightId) return;
+    clearDropHighlight();
+    if (!layoutId) return;
+    var node = dropTargetNode(layoutId);
+    if (!node) return;
+    dropHighlightId = layoutId;
+    node.classList.add("drop-target");
+  }
+
+  function addFiles(list, targetLayoutId) {
     var files = [].slice.call(list || []).filter(function (f) {
       return f.type && f.type.indexOf("image/") === 0;
     });
     if (!files.length) return status("이미지 파일만 추가할 수 있습니다.", "err");
-    var L = lay();
+    writeForm();
+    var L = (targetLayoutId && layouts[targetLayoutId]) || lay();
     if (!L) return status("레이아웃을 먼저 선택하세요.", "err");
 
     pushUndo();
@@ -788,29 +943,43 @@
         });
         reflow(L);
       }
-      refresh();
-      status(files.length + "개 이미지 추가됨", "ok");
+      if (targetLayoutId) selectLayout(L.id);
+      else refresh();
+      status(files.length + "개 이미지 추가됨 → " + (L.name || "레이아웃"), "ok");
+      requestAutoExport(true);
     }).catch(function (e) {
       if (undoStack.length) undoStack.pop();
       status(String(e.message || e), "err");
     });
   }
 
-  function bindDrop(node) {
+  function bindDrop(node, resolveLayoutId) {
     if (!node) return;
+    var isPreview = node === el.wrap;
     node.addEventListener("dragover", function (e) {
       e.preventDefault();
       e.stopPropagation();
-      node.classList.add("dragover");
+      if (isPreview && typeof resolveLayoutId === "function") {
+        setDropHighlight(resolveLayoutId(e));
+      } else {
+        node.classList.add("dragover");
+      }
     });
     node.addEventListener("dragleave", function (e) {
-      if (!node.contains(e.relatedTarget)) node.classList.remove("dragover");
+      if (node.contains(e.relatedTarget)) return;
+      if (isPreview) clearDropHighlight();
+      else node.classList.remove("dragover");
     });
     node.addEventListener("drop", function (e) {
       e.preventDefault();
       e.stopPropagation();
-      node.classList.remove("dragover");
-      if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+      if (isPreview) clearDropHighlight();
+      else node.classList.remove("dragover");
+      if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+      var targetId = typeof resolveLayoutId === "function"
+        ? resolveLayoutId(e)
+        : null;
+      addFiles(e.dataTransfer.files, targetId || undefined);
     });
   }
 
@@ -914,6 +1083,60 @@
     }, "image/png");
   }
 
+  function isAutoExportOn() {
+    var cb = $("autoExportPng");
+    return !!(cb && cb.checked);
+  }
+
+  function requestAutoExport(immediate) {
+    if (!isAutoExportOn() || !canvasId) return;
+    if (drag) return; // resize/move in progress — wait until mouseup
+    clearTimeout(autoExportTimer);
+    autoExportTimer = null;
+    if (immediate) {
+      runAutoExport();
+      return;
+    }
+    autoExportTimer = setTimeout(function () {
+      autoExportTimer = null;
+      runAutoExport();
+    }, 280);
+  }
+
+  function runAutoExport() {
+    if (!isAutoExportOn() || !canvasId) return;
+    if (autoExportBusy) {
+      autoExportPending = true;
+      return;
+    }
+    autoExportBusy = true;
+    writeForm();
+    var s = canvasSize();
+    el.canvas.width = s.w;
+    el.canvas.height = s.h;
+    var ctx = el.canvas.getContext("2d");
+    ctx.clearRect(0, 0, s.w, s.h);
+    draw(ctx, canvasId, 0, 0, 0);
+    el.canvas.toBlob(function (blob) {
+      if (!blob) {
+        autoExportBusy = false;
+        status("자동 내보내기 실패", "err");
+        return;
+      }
+      savePng(blob).then(function (name) {
+        if (name) status("자동 내보내기: '" + name + "'", "ok");
+      }).catch(function (e) {
+        if (e && e.name !== "AbortError") status(String(e.message || e), "err");
+      }).then(function () {
+        autoExportBusy = false;
+        if (autoExportPending) {
+          autoExportPending = false;
+          runAutoExport();
+        }
+      });
+    }, "image/png");
+  }
+
   var PROJECT_KIND = "obs-grid-designer";
   var PROJECT_VERSION = 1;
 
@@ -973,6 +1196,7 @@
     readForm();
     refresh();
     undoSuspended = false;
+    requestAutoExport(true);
   }
 
   function undo() {
@@ -987,6 +1211,7 @@
   function clearUndo() {
     undoStack = [];
     formUndoArmed = false;
+    clip = null;
   }
 
   function armFormUndo() {
@@ -1058,27 +1283,41 @@
     return Object.keys(used);
   }
 
-  function buildProject() {
-    writeForm();
-    var ids = collectUsedImageIds(canvasId);
-    var chain = Promise.resolve();
-    var imagePayload = {};
-    ids.forEach(function (id) {
-      chain = chain.then(function () {
-        var entry = images[id];
-        if (!entry) return;
-        return imageToDataUrl(entry).then(function (dataUrl) {
-          imagePayload[id] = { id: id, name: entry.name || id, dataUrl: dataUrl };
-        });
+  function stripImageChildren(layoutsMap) {
+    Object.keys(layoutsMap).forEach(function (id) {
+      var L = layoutsMap[id];
+      L.children = (L.children || []).filter(function (ch) {
+        return ch.type !== "image";
       });
     });
+    return layoutsMap;
+  }
+
+  function buildProject(includeImages) {
+    writeForm();
+    var imagePayload = {};
+    var chain = Promise.resolve();
+    if (includeImages) {
+      var ids = collectUsedImageIds(canvasId);
+      ids.forEach(function (id) {
+        chain = chain.then(function () {
+          var entry = images[id];
+          if (!entry) return;
+          return imageToDataUrl(entry).then(function (dataUrl) {
+            imagePayload[id] = { id: id, name: entry.name || id, dataUrl: dataUrl };
+          });
+        });
+      });
+    }
     return chain.then(function () {
+      var layoutPayload = cloneLayoutsMap(layouts);
+      if (!includeImages) stripImageChildren(layoutPayload);
       return {
         kind: PROJECT_KIND,
         version: PROJECT_VERSION,
         canvasId: canvasId,
         maxZ: maxZ,
-        layouts: cloneLayoutsMap(layouts),
+        layouts: layoutPayload,
         images: imagePayload,
       };
     });
@@ -1152,12 +1391,17 @@
   }
 
   function saveProject() {
-    status("구조 저장 중…");
-    buildProject().then(function (project) {
+    var includeImages = !!( $("saveWithImages") && $("saveWithImages").checked );
+    status(includeImages ? "구조·이미지 저장 중…" : "구조 저장 중…");
+    buildProject(includeImages).then(function (project) {
       downloadJson(project, "grid-composer-structure.json");
       var nLay = Object.keys(project.layouts).length;
       var nImg = Object.keys(project.images).length;
-      status("구조 저장됨 (" + nLay + " 레이아웃, " + nImg + " 이미지)", "ok");
+      if (includeImages) {
+        status("구조 저장됨 (" + nLay + " 레이아웃, " + nImg + " 이미지)", "ok");
+      } else {
+        status("구조 저장됨 (" + nLay + " 레이아웃, 이미지 제외)", "ok");
+      }
     }).catch(function (e) {
       status(String((e && e.message) || e), "err");
     });
@@ -1345,7 +1589,10 @@
     if (!changed && finished.undoPushed && undoStack.length) undoStack.pop();
     if (finished.mode === "resize" && pch && pch.type === "layout") reflowIfLayout(pch.refId);
     refresh();
-    if (changed) status("프레임 수정됨", "ok");
+    if (changed) {
+      status("프레임 수정됨", "ok");
+      requestAutoExport(true);
+    }
   });
 
   // wire
@@ -1362,11 +1609,12 @@
       writeForm();
       reflow(lay());
       refresh();
+      requestAutoExport(true);
     };
-    el.alignPad.appendChild(b);
   });
 
   $("addChildLayoutBtn").onclick = function () {
+    closeAddMenu();
     var parent = lay();
     if (!parent) return;
     writeForm();
@@ -1393,7 +1641,35 @@
       reflow(parent);
     }
     selectLayout(id);
+    status("레이아웃 추가됨", "ok");
+    requestAutoExport(true);
   };
+
+  function setAddMenuOpen(open) {
+    var panel = $("addMenuPanel");
+    var btn = $("addMenuBtn");
+    if (!panel || !btn) return;
+    panel.hidden = !open;
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function closeAddMenu() { setAddMenuOpen(false); }
+
+  if ($("addMenuBtn")) {
+    $("addMenuBtn").onclick = function (e) {
+      e.stopPropagation();
+      var panel = $("addMenuPanel");
+      setAddMenuOpen(!!(panel && panel.hidden));
+    };
+  }
+  if ($("fileInput")) {
+    $("fileInput").addEventListener("click", closeAddMenu);
+  }
+  document.addEventListener("mousedown", function (e) {
+    var menu = $("addMenu");
+    if (!menu || menu.contains(e.target)) return;
+    closeAddMenu();
+  });
 
   function deleteLayoutById(id) {
     if (!id || id === canvasId || !layouts[id]) return false;
@@ -1418,6 +1694,7 @@
       if (ch && ch.type === "layout" && ch.refId) {
         deleteLayoutById(ch.refId);
         status("레이아웃 제거됨", "ok");
+        requestAutoExport(true);
         return true;
       }
       L.children.splice(selectedChild, 1);
@@ -1426,6 +1703,7 @@
       if (!isCanvas(L.id)) reflow(L);
       refresh();
       status("이미지 제거됨", "ok");
+      requestAutoExport(true);
       return true;
     }
     if (isCanvas(L.id)) {
@@ -1435,7 +1713,307 @@
     pushUndo();
     deleteLayoutById(L.id);
     status("레이아웃 제거됨", "ok");
+    requestAutoExport(true);
     return true;
+  }
+
+  function getCopyTarget() {
+    if (selectedChild >= 0) {
+      var parent = lay();
+      if (!parent || !parent.children[selectedChild]) return null;
+      var ch = parent.children[selectedChild];
+      if (ch.type === "image") return { kind: "image", parentId: parent.id, index: selectedChild };
+      if (ch.type === "layout" && ch.refId) return { kind: "layout", id: ch.refId };
+      return null;
+    }
+    if (activeId && !isCanvas(activeId) && layouts[activeId]) {
+      return { kind: "layout", id: activeId };
+    }
+    return null;
+  }
+
+  function cloneLayoutSubtree(rootId) {
+    var idMap = {};
+    var order = [];
+    function walk(id) {
+      if (!layouts[id] || idMap[id]) return;
+      order.push(id);
+      idMap[id] = uid("lay");
+      (layouts[id].children || []).forEach(function (ch) {
+        if (ch.type === "layout" && layouts[ch.refId]) walk(ch.refId);
+      });
+    }
+    walk(rootId);
+    var out = {};
+    order.forEach(function (oldId) {
+      var L = layouts[oldId];
+      var newId = idMap[oldId];
+      out[newId] = {
+        id: newId,
+        name: oldId === rootId ? (L.name + " 복사") : L.name,
+        parentId: oldId === rootId ? null : idMap[L.parentId],
+        settings: Object.assign({}, L.settings),
+        transparentBg: L.transparentBg !== false,
+        bgColor: L.bgColor || "#000000",
+        children: (L.children || []).map(function (ch) {
+          if (ch.type === "layout") {
+            return {
+              type: "layout",
+              refId: idMap[ch.refId],
+              frame: ch.frame ? Object.assign({}, ch.frame) : null,
+            };
+          }
+          return {
+            type: "image",
+            refId: ch.refId,
+            frame: ch.frame ? Object.assign({}, ch.frame) : null,
+          };
+        }),
+      };
+    });
+    return { rootId: idMap[rootId], layouts: out };
+  }
+
+  function copySelection() {
+    var t = getCopyTarget();
+    if (!t) {
+      status("복사할 레이아웃 또는 이미지를 선택하세요.", "err");
+      return;
+    }
+    if (t.kind === "image") {
+      var ch = layouts[t.parentId].children[t.index];
+      if (!ch || !images[ch.refId]) {
+        status("이미지를 복사할 수 없습니다.", "err");
+        return;
+      }
+      clip = {
+        kind: "image",
+        child: {
+          type: "image",
+          refId: ch.refId,
+          frame: ch.frame ? Object.assign({}, ch.frame) : null,
+        },
+      };
+      status("이미지 복사됨", "ok");
+      return;
+    }
+    if (!layouts[t.id]) {
+      status("레이아웃을 복사할 수 없습니다.", "err");
+      return;
+    }
+    var sub = cloneLayoutSubtree(t.id);
+    var pf = findParentFrame(t.id);
+    clip = {
+      kind: "layout",
+      rootId: sub.rootId,
+      layouts: sub.layouts,
+      frame: pf ? Object.assign({}, pf) : null,
+    };
+    status("레이아웃 복사됨 (하위 포함)", "ok");
+  }
+
+  function pasteParentId() {
+    if (!activeId || !layouts[activeId]) return canvasId;
+    return activeId;
+  }
+
+  function instantiateClipLayouts(srcRootId, srcLayouts, parentId) {
+    var idMap = {};
+    Object.keys(srcLayouts).forEach(function (srcId) {
+      idMap[srcId] = uid("lay");
+    });
+    var newRoot = idMap[srcRootId];
+    Object.keys(srcLayouts).forEach(function (srcId) {
+      var src = srcLayouts[srcId];
+      var nid = idMap[srcId];
+      layouts[nid] = {
+        id: nid,
+        name: src.name,
+        parentId: srcId === srcRootId ? parentId : idMap[src.parentId],
+        settings: Object.assign({}, src.settings),
+        transparentBg: src.transparentBg !== false,
+        bgColor: src.bgColor || "#000000",
+        children: (src.children || []).map(function (ch) {
+          if (ch.type === "layout") {
+            return {
+              type: "layout",
+              refId: idMap[ch.refId],
+              frame: ch.frame ? Object.assign({}, ch.frame) : null,
+            };
+          }
+          return {
+            type: "image",
+            refId: ch.refId,
+            frame: ch.frame ? Object.assign({}, ch.frame) : null,
+          };
+        }),
+      };
+    });
+    return newRoot;
+  }
+
+  function pasteClipboard() {
+    if (!clip) {
+      status("붙여넣을 내용이 없습니다.", "err");
+      return;
+    }
+    var parentId = pasteParentId();
+    var parent = layouts[parentId];
+    if (!parent) return;
+
+    pushUndo();
+
+    if (clip.kind === "image") {
+      if (!images[clip.child.refId]) {
+        if (undoStack.length) undoStack.pop();
+        status("복사한 이미지를 찾을 수 없습니다.", "err");
+        return;
+      }
+      var frame = null;
+      if (isCanvas(parentId)) {
+        var src = clip.child.frame || { x: 24, y: 24, w: 200, h: 160, z: 1 };
+        maxZ += 1;
+        frame = {
+          x: Math.round((src.x || 0) + 24),
+          y: Math.round((src.y || 0) + 24),
+          w: src.w || 200,
+          h: src.h || 160,
+          z: maxZ,
+        };
+      }
+      parent.children.push({ type: "image", refId: clip.child.refId, frame: frame });
+      if (!isCanvas(parentId)) reflow(parent);
+      var idx = parent.children.length - 1;
+      activeId = parentId;
+      selectedChild = idx;
+      previewSel = isInteractiveChild(parentId, parent.children[idx])
+        ? { parentId: parentId, index: idx }
+        : { parentId: null, index: -1 };
+      readForm();
+      refresh();
+      status("이미지 붙여넣음", "ok");
+      requestAutoExport(true);
+      return;
+    }
+
+    if (clip.kind === "layout") {
+      var newRoot = instantiateClipLayouts(clip.rootId, clip.layouts, parentId);
+      var rootLay = layouts[newRoot];
+      if (isCanvas(parentId)) {
+        var i = parent.children.length;
+        var w = ns(rootLay.settings).width;
+        var h = ns(rootLay.settings).height;
+        var fx = clip.frame ? Math.round(clip.frame.x + 24) : 40 + i * 28;
+        var fy = clip.frame ? Math.round(clip.frame.y + 24) : 40 + i * 28;
+        maxZ += 1;
+        parent.children.push({
+          type: "layout",
+          refId: newRoot,
+          frame: { x: fx, y: fy, w: w, h: h, z: maxZ },
+        });
+      } else {
+        var ps = ns(parent.settings);
+        rootLay.settings.width = ps.cell_w;
+        rootLay.settings.height = ps.cell_h;
+        parent.children.push({ type: "layout", refId: newRoot, frame: null });
+        reflow(parent);
+      }
+      selectLayout(newRoot);
+      status("레이아웃 붙여넣음", "ok");
+      requestAutoExport(true);
+    }
+  }
+
+  function duplicateSelection() {
+    var t = getCopyTarget();
+    if (!t) {
+      status("복제할 레이아웃 또는 이미지를 선택하세요.", "err");
+      return;
+    }
+    pushUndo();
+
+    if (t.kind === "image") {
+      var parent = layouts[t.parentId];
+      var ch = parent && parent.children[t.index];
+      if (!parent || !ch || !images[ch.refId]) {
+        if (undoStack.length) undoStack.pop();
+        status("이미지를 복제할 수 없습니다.", "err");
+        return;
+      }
+      var frame = null;
+      if (isCanvas(parent.id)) {
+        var src = ch.frame || { x: 24, y: 24, w: 200, h: 160, z: 1 };
+        maxZ += 1;
+        frame = {
+          x: Math.round((src.x || 0) + 24),
+          y: Math.round((src.y || 0) + 24),
+          w: src.w || 200,
+          h: src.h || 160,
+          z: maxZ,
+        };
+      }
+      parent.children.splice(t.index + 1, 0, {
+        type: "image",
+        refId: ch.refId,
+        frame: frame,
+      });
+      if (!isCanvas(parent.id)) reflow(parent);
+      selectChildNode(parent.id, t.index + 1);
+      status("이미지 복제됨", "ok");
+      requestAutoExport(true);
+      return;
+    }
+
+    var srcLay = layouts[t.id];
+    var parentId = srcLay && srcLay.parentId;
+    var parent = parentId && layouts[parentId];
+    if (!srcLay || !parent) {
+      if (undoStack.length) undoStack.pop();
+      status("레이아웃을 복제할 수 없습니다.", "err");
+      return;
+    }
+    var idx = -1;
+    for (var i = 0; i < parent.children.length; i++) {
+      if (parent.children[i].type === "layout" && parent.children[i].refId === t.id) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx < 0) {
+      if (undoStack.length) undoStack.pop();
+      status("레이아웃을 복제할 수 없습니다.", "err");
+      return;
+    }
+
+    var sub = cloneLayoutSubtree(t.id);
+    var newRoot = instantiateClipLayouts(sub.rootId, sub.layouts, parentId);
+    var rootLay = layouts[newRoot];
+    var childEntry;
+    if (isCanvas(parentId)) {
+      var pf = parent.children[idx].frame || findParentFrame(t.id);
+      maxZ += 1;
+      childEntry = {
+        type: "layout",
+        refId: newRoot,
+        frame: {
+          x: Math.round(((pf && pf.x) || 40) + 24),
+          y: Math.round(((pf && pf.y) || 40) + 24),
+          w: ns(rootLay.settings).width,
+          h: ns(rootLay.settings).height,
+          z: maxZ,
+        },
+      };
+    } else {
+      var ps = ns(parent.settings);
+      rootLay.settings.width = ps.cell_w;
+      rootLay.settings.height = ps.cell_h;
+      childEntry = { type: "layout", refId: newRoot, frame: null };
+    }
+    parent.children.splice(idx + 1, 0, childEntry);
+    if (!isCanvas(parentId)) reflow(parent);
+    selectLayout(newRoot);
+    status("레이아웃 복제됨", "ok");
+    requestAutoExport(true);
   }
 
   $("removeNodeBtn").onclick = function () { removeSelected(); };
@@ -1451,6 +2029,7 @@
     previewSel = { parentId: null, index: -1 };
     if (!isCanvas(L.id)) reflow(L);
     refresh();
+    requestAutoExport(true);
   };
 
   el.reflowBtn.onclick = function () {
@@ -1462,6 +2041,7 @@
     selectedChild = -1;
     refresh();
     status("격자 재배치 완료", "ok");
+    requestAutoExport(true);
   };
 
   var formKeys = [
@@ -1488,28 +2068,37 @@
         writeForm();
         reflow(lay());
         refresh();
+        requestAutoExport(false);
       });
     });
   });
 
-  function onLayoutSizeChange() {
+  function onLayoutSizeInput() {
     if (isCanvas(activeId) || isSizeLocked(activeId)) return;
     writeForm();
     reflow(lay());
     refresh();
   }
+  function onLayoutSizeChange() {
+    onLayoutSizeInput();
+    requestAutoExport(true);
+  }
   [el.w, el.h].forEach(function (inp) {
+    inp.addEventListener("input", onLayoutSizeInput);
     inp.addEventListener("change", onLayoutSizeChange);
-    inp.addEventListener("input", onLayoutSizeChange);
   });
 
-  function onCanvasSizeChange() {
+  function onCanvasSizeInput() {
     writeCanvasSize();
     refreshPreview();
   }
+  function onCanvasSizeChange() {
+    onCanvasSizeInput();
+    requestAutoExport(true);
+  }
   [el.canvasW, el.canvasH].forEach(function (inp) {
+    inp.addEventListener("input", onCanvasSizeInput);
     inp.addEventListener("change", onCanvasSizeChange);
-    inp.addEventListener("input", onCanvasSizeChange);
   });
 
   el.clearBg.onchange = function () {
@@ -1518,11 +2107,13 @@
     el.bgRow.style.opacity = el.clearBg.checked ? "0.5" : "1";
     writeForm();
     refreshPreview();
+    requestAutoExport(true);
   };
   el.bg.oninput = function () {
     if (isCanvas(activeId)) return;
     writeForm();
     refreshPreview();
+    requestAutoExport(false);
   };
 
   if (el.snapBtn) {
@@ -1555,14 +2146,12 @@
   }, { passive: false });
 
   el.file.onchange = function () { addFiles(el.file.files); el.file.value = ""; };
+  // Prevent browser from opening dropped files; only the preview accepts image drops.
   window.addEventListener("dragover", function (e) { e.preventDefault(); });
-  window.addEventListener("drop", function (e) {
-    if (e.defaultPrevented) return;
-    e.preventDefault();
-    if (e.dataTransfer && e.dataTransfer.files) addFiles(e.dataTransfer.files);
+  window.addEventListener("drop", function (e) { e.preventDefault(); });
+  bindDrop(el.wrap, function (e) {
+    return layoutIdAtClient(e.clientX, e.clientY);
   });
-  bindDrop(el.wrap);
-  bindDrop(el.hierarchy);
 
   $("saveProjectBtn").onclick = saveProject;
   $("projectInput").onchange = function () {
@@ -1590,6 +2179,7 @@
       el.canvasH.value = btn.getAttribute("data-h");
       writeCanvasSize();
       refreshPreview();
+      requestAutoExport(true);
     };
   });
   document.querySelectorAll(".layout-preset").forEach(function (btn) {
@@ -1601,6 +2191,7 @@
       writeForm();
       reflow(lay());
       refresh();
+      requestAutoExport(true);
     };
   });
 
@@ -1611,9 +2202,31 @@
       removeSelected();
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+    var mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      if (e.shiftKey) saveProject();
+      else exportPng();
+      return;
+    }
+    if (mod && !e.shiftKey && e.key.toLowerCase() === "z") {
       e.preventDefault();
       undo();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "c") {
+      e.preventDefault();
+      copySelection();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "v") {
+      e.preventDefault();
+      pasteClipboard();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "d") {
+      e.preventDefault();
+      duplicateSelection();
     }
   });
 

@@ -1,0 +1,114 @@
+Grid Composer Proprietary Source-Available License
+Copyright (c) 2026 AINukeHere <iii4625@naver.com>
+All rights reserved.
+
+SPDX-License-Identifier: LicenseRef-GridComposer-Proprietary
+(This file is the license text referenced by that identifier.)
+
+===============================================================================
+요약 (비구속적 안내)
+===============================================================================
+이 소프트웨어의 소스 코드는 공개되어 있으나, 오픈소스가 아닙니다.
+개인·비상업적 열람·사용은 허용됩니다.
+상업적 이용, 재배포, 타 서비스·플랫폼에의 통합·복제·이식은 금지됩니다.
+정식 허가가 필요하면 저작권자에게 문의하십시오.
+
+The following English text is the binding license. The Korean summary above is
+for convenience only and does not modify the terms below.
+
+===============================================================================
+1. Definitions
+===============================================================================
+"Software" means this repository and all of its source code, documentation,
+assets, and any modified or derivative versions thereof.
+
+"Copyright Holder" means AINukeHere (contact: iii4625@naver.com).
+
+"Commercial Use" means any use intended for or directed toward commercial
+advantage or monetary compensation, including without limitation: selling,
+licensing, hosting as a paid or ad-supported service, offering as a feature of
+a commercial product or platform, internal use by a for-profit organization in
+connection with its products or services, or use that competes with products or
+services offered by the Copyright Holder.
+
+"Platform Integration" means embedding, reimplementing, porting, wrapping, or
+otherwise making the Software (or a substantial portion or derivative of it)
+available as part of another website, application, SaaS, streaming tool,
+OBS-related product, creator tool, or similar online or desktop service.
+
+===============================================================================
+2. Grant of Limited Rights
+===============================================================================
+Subject to the terms of this License, the Copyright Holder grants you a
+non-exclusive, non-transferable, revocable, royalty-free license to:
+
+  (a) view and study the Software;
+  (b) run the Software locally for personal, non-commercial purposes;
+  (c) make private modifications for personal, non-commercial purposes; and
+  (d) fork or copy the repository solely to propose contributions back to the
+      Copyright Holder, or for personal archival/backup.
+
+No other rights are granted. All rights not expressly granted are reserved.
+
+===============================================================================
+3. Restrictions
+===============================================================================
+You may NOT, without prior written permission from the Copyright Holder:
+
+  (a) use the Software for Commercial Use;
+  (b) perform Platform Integration of the Software;
+  (c) copy, adapt, translate, or reimplement a substantial portion of the
+      Software's source code, architecture, UI structure, or distinctive
+      interaction design for use in another product or service;
+  (d) redistribute, sublicense, sell, rent, lease, or publicly host the
+      Software (modified or unmodified), except as a link to the official
+      repository or official hosted demo operated by the Copyright Holder;
+  (e) remove, obscure, or alter any copyright, license, or attribution notices;
+  (f) use the Software to develop, train, or improve a competing product or
+      service; or
+  (g) claim ownership of the Software or present it as your original work.
+
+===============================================================================
+4. Contributions
+===============================================================================
+If you submit a pull request, patch, or other contribution, you grant the
+Copyright Holder a perpetual, worldwide, royalty-free, irrevocable license to
+use, modify, and redistribute that contribution under this License or any
+other terms chosen by the Copyright Holder.
+
+===============================================================================
+5. Termination
+===============================================================================
+This License terminates automatically if you breach any of its terms.
+Upon termination you must cease all use of the Software and destroy copies in
+your possession, except as required by law. Sections 3, 6, 7, and 8 survive
+termination.
+
+===============================================================================
+6. Disclaimer of Warranty
+===============================================================================
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. THE ENTIRE RISK AS TO
+THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH YOU.
+
+===============================================================================
+7. Limitation of Liability
+===============================================================================
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+===============================================================================
+8. Governing Law
+===============================================================================
+This License is governed by the laws of the Republic of Korea, without regard
+to conflict-of-law principles. Exclusive jurisdiction lies with the courts of
+the Republic of Korea, unless the Copyright Holder elects otherwise in writing.
+
+===============================================================================
+9. Contact / Commercial Licensing
+===============================================================================
+For commercial use, Platform Integration, redistribution, or any exception to
+the restrictions above, contact: iii4625@naver.com

@@ -1,4 +1,9 @@
 <!DOCTYPE html>
+<!--
+  Grid Composer
+  Copyright (c) 2026 AINukeHere
+  SPDX-License-Identifier: LicenseRef-GridComposer-Proprietary
+-->
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
@@ -14,6 +19,10 @@
           <label class="file-pick-label" for="projectInput">열기</label>
           <input id="projectInput" class="file-input" type="file" accept="application/json,.json" />
           <button id="saveProjectBtn" type="button">저장</button>
+          <label class="checkbox-row compact" for="saveWithImages" title="체크 시 JSON에 이미지 데이터 포함">
+            <input id="saveWithImages" type="checkbox" />
+            이미지 포함
+          </label>
         </div>
       </div>
       <div class="app-bar-center">
@@ -21,6 +30,10 @@
         <p id="savePaths" class="hint app-bar-path"></p>
       </div>
       <div class="app-bar-right">
+        <label class="checkbox-row compact" for="autoExportPng" title="구조가 바뀔 때마다 PNG를 자동 저장합니다. 크기 조절은 끝난 뒤에만 저장합니다.">
+          <input id="autoExportPng" type="checkbox" />
+          자동 내보내기
+        </label>
         <button id="changePngPathBtn" type="button" title="PNG 저장 위치 변경">위치 변경</button>
         <button id="exportPngBtn" class="primary" type="button">내보내기</button>
       </div>
@@ -34,9 +47,14 @@
             <h2>계층 구조</h2>
           </div>
           <div class="actions tight wrap">
-            <label class="file-pick-label primary-label" for="fileInput">이미지 추가</label>
+            <div class="menu-drop" id="addMenu">
+              <button id="addMenuBtn" class="primary" type="button" aria-haspopup="true" aria-expanded="false">추가 ▾</button>
+              <div class="menu-drop-panel" id="addMenuPanel" hidden>
+                <label class="menu-drop-item" for="fileInput">이미지 추가</label>
+                <button id="addChildLayoutBtn" class="menu-drop-item" type="button">레이아웃 추가</button>
+              </div>
+            </div>
             <input id="fileInput" class="file-input" type="file" accept="image/*" multiple />
-            <button id="addChildLayoutBtn" type="button" title="하위 레이아웃 추가">+ 하위</button>
             <button id="reflowGridBtn" type="button">격자</button>
             <button id="removeNodeBtn" class="danger" type="button" title="선택 항목 제거">제거</button>
             <button id="clearChildrenBtn" class="danger" type="button" title="선택 대상의 자식 전체 제거">전체</button>
@@ -197,7 +215,7 @@
           </div>
         </div>
         <p id="previewMeta" class="muted"></p>
-        <div class="preview-wrap" id="previewWrap" title="스크롤 휠로 확대/축소 · 이미지 드롭으로 추가">
+          <div class="preview-wrap" id="previewWrap" title="스크롤 휠로 확대/축소 · 레이아웃 위에 이미지 드롭으로 추가">
           <div id="previewShell" class="preview-shell">
             <div id="previewStage" class="preview-stage"></div>
             <div id="canvasSizeBadge" class="canvas-size-badge" aria-hidden="true"></div>
