@@ -59,10 +59,10 @@
               <div class="menu-drop-panel" id="addMenuPanel" hidden>
                 <label class="menu-drop-item" for="fileInput" data-i18n="addImage">이미지 추가</label>
                 <button id="addChildLayoutBtn" class="menu-drop-item" type="button" data-i18n="addLayout">레이아웃 추가</button>
+                <button id="folderWatchMenuBtn" class="menu-drop-item" type="button" data-i18n="folderWatch" data-i18n-title="folderWatchTitle">자동 설정</button>
               </div>
             </div>
             <input id="fileInput" class="file-input" type="file" accept="image/*" multiple />
-            <button id="reflowGridBtn" type="button" data-i18n="reflow">격자</button>
             <button id="removeNodeBtn" class="danger" type="button" data-i18n="remove" data-i18n-title="removeTitle">제거</button>
             <button id="clearChildrenBtn" class="danger" type="button" data-i18n="clearAll" data-i18n-title="clearAllTitle">전체</button>
           </div>
@@ -233,6 +233,41 @@
     </div>
 
     <canvas id="exportCanvas" hidden></canvas>
+
+    <div id="folderWatchModal" class="modal" hidden>
+      <div class="modal-backdrop" data-folder-watch-close></div>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="folderWatchModalTitle">
+        <div class="modal-head">
+          <h2 id="folderWatchModalTitle" data-i18n="folderWatchModalTitle">자동 이미지 추가</h2>
+          <button type="button" class="modal-close" data-folder-watch-close aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="muted modal-desc" data-i18n="folderWatchDesc">지정한 폴더에 새 이미지가 생기면 선택한 레이아웃에 자동으로 추가합니다. Chrome/Edge 등에서 동작하며, 이 탭이 열려 있는 동안만 감시합니다.</p>
+          <label class="checkbox-row" for="folderWatchEnabled">
+            <input id="folderWatchEnabled" type="checkbox" />
+            <span data-i18n="folderWatchEnable">자동 추가 사용</span>
+          </label>
+          <div class="form-row full modal-field">
+            <label data-i18n="folderWatchFolder">감시 폴더</label>
+            <div class="actions tight wrap">
+              <button id="folderWatchPickBtn" type="button" data-i18n="folderWatchPick">폴더 선택</button>
+              <button id="folderWatchClearBtn" type="button" data-i18n="folderWatchClear">해제</button>
+            </div>
+            <p id="folderWatchFolderLabel" class="muted modal-path" data-i18n="folderWatchNoFolder">(미선택)</p>
+          </div>
+          <div class="form-row full modal-field">
+            <label for="folderWatchTarget" data-i18n="folderWatchTarget">추가할 레이아웃</label>
+            <select id="folderWatchTarget"></select>
+          </div>
+          <p id="folderWatchSupportHint" class="muted modal-hint" hidden></p>
+        </div>
+        <div class="modal-foot">
+          <button type="button" data-folder-watch-close data-i18n="folderWatchCancel">취소</button>
+          <button id="folderWatchSaveBtn" class="primary" type="button" data-i18n="folderWatchSave">저장</button>
+        </div>
+      </div>
+    </div>
+
     <script src="js/grid.js"></script>
     <script src="js/i18n.js"></script>
     <script src="js/app.js"></script>

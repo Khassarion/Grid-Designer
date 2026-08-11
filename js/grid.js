@@ -106,21 +106,17 @@
       rows = Math.max(1, Math.ceil(n / cols));
     }
 
-    var gridW = cols * cw + Math.max(0, cols - 1) * sx;
-    var gridH = rows * ch + Math.max(0, rows - 1) * sy;
-    // negative spacing shrinks total span
-    if (cols > 1) gridW = cols * cw + (cols - 1) * sx;
-    if (rows > 1) gridH = rows * ch + (rows - 1) * sy;
-
-    var align = parseAlign(s.child_align);
-    var originX = s.pad_l + alignOffset(gridW, usableW, align.h);
-    var originY = s.pad_t + alignOffset(gridH, usableH, align.v);
-
     var flipX = s.start_corner === Corner.RIGHT_TOP || s.start_corner === Corner.RIGHT_BOTTOM;
     var flipY = s.start_corner === Corner.LEFT_BOTTOM || s.start_corner === Corner.RIGHT_BOTTOM;
     var vertical = s.start_axis === "vertical";
 
-    var out = [];
+    // Place into logical col/row first, then align by the occupied cell-group
+    // bounding box (empty slots must not inflate size — spacing only between used cells).
+    var placements = [];
+    var minCol = Infinity;
+    var maxCol = -Infinity;
+    var minRow = Infinity;
+    var maxRow = -Infinity;
     for (var i = 0; i < n; i++) {
       var major;
       var minor;
@@ -137,12 +133,31 @@
         col = flipX ? cols - 1 - minor : minor;
         row = flipY ? rows - 1 - major : major;
       }
+      placements.push({ index: i, row: row, col: col });
+      if (col < minCol) minCol = col;
+      if (col > maxCol) maxCol = col;
+      if (row < minRow) minRow = row;
+      if (row > maxRow) maxRow = row;
+    }
+
+    var spanCols = maxCol - minCol + 1;
+    var spanRows = maxRow - minRow + 1;
+    var gridW = spanCols * cw + (spanCols - 1) * sx;
+    var gridH = spanRows * ch + (spanRows - 1) * sy;
+
+    var align = parseAlign(s.child_align);
+    var originX = s.pad_l + alignOffset(gridW, usableW, align.h);
+    var originY = s.pad_t + alignOffset(gridH, usableH, align.v);
+
+    var out = [];
+    for (var j = 0; j < placements.length; j++) {
+      var p = placements[j];
       out.push({
-        index: i,
-        row: row,
-        col: col,
-        x: originX + col * (cw + sx),
-        y: originY + row * (ch + sy),
+        index: p.index,
+        row: p.row,
+        col: p.col,
+        x: originX + (p.col - minCol) * (cw + sx),
+        y: originY + (p.row - minRow) * (ch + sy),
         width: cw,
         height: ch,
       });

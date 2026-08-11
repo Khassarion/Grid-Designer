@@ -71,6 +71,29 @@
   var autoExportBusy = false;
   var autoExportPending = false;
 
+  var FOLDER_WATCH_LS = "grid-composer-folder-watch";
+  var FOLDER_SEEN_LS = "grid-composer-folder-seen";
+  var FOLDER_POLL_MS = 3000;
+  var folderHandle = null;
+  var folderWatch = {
+    enabled: false,
+    targetLayoutId: null,
+    folderName: "",
+  };
+  var folderSeenKeys = {};
+  var folderPollTimer = null;
+  var folderScanBusy = false;
+  var folderObserver = null;
+  var folderScanDebounce = null;
+  var folderPendingStable = {};
+  var folderModalDraft = {
+    enabled: false,
+    targetLayoutId: null,
+    folderName: "",
+    handle: null,
+    clearHandle: false,
+  };
+
   var el = {
     tree: $("layoutTree"),
     hierarchy: $("hierarchyPanel"),
@@ -113,7 +136,6 @@
     zoomLabel: $("zoomLabel"),
     canvas: $("exportCanvas"),
     file: $("fileInput"),
-    reflowBtn: $("reflowGridBtn"),
     removeBtn: $("removeNodeBtn"),
     snapBtn: $("snapToggleBtn"),
   };
@@ -495,10 +517,6 @@
     el.sizeLockHint.hidden = !locked;
     el.w.disabled = locked;
     el.h.disabled = locked;
-    if (el.reflowBtn) {
-      el.reflowBtn.disabled = !!isC;
-      el.reflowBtn.title = isC ? t("reflowCanvasTitle") : t("reflowLayoutTitle");
-    }
     if (el.removeBtn) {
       var canRemove = canRemoveSelected();
       el.removeBtn.disabled = !canRemove;
@@ -1265,6 +1283,395 @@
     });
   }
 
+  function supportsFolderWatch() {
+    return typeof window.showDirectoryPicker === "function";
+  }
+
+  function folderFileKey(file) {
+    // Name-only: size/mtime change while a file is still being written,
+    // which previously caused the same image to be imported twice.
+    return file.name;
+  }
+
+  function normalizeFolderSeen(raw) {
+    var out = {};
+    Object.keys(raw || {}).forEach(function (k) {
+      var name = String(k).split("|")[0];
+      if (name) out[name] = true;
+    });
+    return out;
+  }
+
+  function loadFolderWatchSettings() {
+    try {
+      var raw = localStorage.getItem(FOLDER_WATCH_LS);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        folderWatch.enabled = !!parsed.enabled;
+        folderWatch.targetLayoutId = parsed.targetLayoutId || null;
+        folderWatch.folderName = parsed.folderName || "";
+      } else {
+        folderWatch.enabled = false;
+      }
+    } catch (e) {
+      folderWatch.enabled = false;
+    }
+    try {
+      var seen = localStorage.getItem(FOLDER_SEEN_LS);
+      folderSeenKeys = normalizeFolderSeen(seen ? JSON.parse(seen) : {});
+    } catch (e2) {
+      folderSeenKeys = {};
+    }
+  }
+
+  function persistFolderWatchSettings() {
+    try {
+      localStorage.setItem(FOLDER_WATCH_LS, JSON.stringify({
+        enabled: !!folderWatch.enabled,
+        targetLayoutId: folderWatch.targetLayoutId,
+        folderName: folderWatch.folderName || "",
+      }));
+    } catch (e) { /* ignore */ }
+  }
+
+  function persistFolderSeen() {
+    try {
+      localStorage.setItem(FOLDER_SEEN_LS, JSON.stringify(folderSeenKeys));
+    } catch (e) { /* ignore */ }
+  }
+
+  function resolveFolderWatchTargetId() {
+    var id = folderWatch.targetLayoutId;
+    if (id && layouts[id]) return id;
+    return canvasId;
+  }
+
+  function listLayoutOptionsForWatch() {
+    var out = [];
+    function walk(id, depth) {
+      var L = layouts[id];
+      if (!L) return;
+      var pad = "";
+      for (var i = 0; i < depth; i++) pad += "· ";
+      out.push({ id: id, label: pad + (isCanvas(id) ? t("canvas") : (L.name || t("layout"))) });
+      (L.children || []).forEach(function (ch) {
+        if (ch.type === "layout" && ch.refId) walk(ch.refId, depth + 1);
+      });
+    }
+    if (canvasId) walk(canvasId, 0);
+    return out;
+  }
+
+  function fillFolderWatchTargetSelect(sel, selectedId) {
+    if (!sel) return;
+    var opts = listLayoutOptionsForWatch();
+    sel.replaceChildren();
+    opts.forEach(function (o) {
+      var option = document.createElement("option");
+      option.value = o.id;
+      option.textContent = o.label;
+      sel.appendChild(option);
+    });
+    if (selectedId && layouts[selectedId]) sel.value = selectedId;
+    else if (canvasId) sel.value = canvasId;
+  }
+
+  function updateFolderWatchBtn() {
+    var on = !!(folderWatch.enabled && folderHandle);
+    var addBtn = $("addMenuBtn");
+    if (addBtn) {
+      addBtn.classList.toggle("folder-watch-on", on);
+      addBtn.title = on ? t("folderWatchOn") : "";
+    }
+    var item = $("folderWatchMenuBtn");
+    if (!item) return;
+    item.classList.toggle("active", on);
+    item.title = on ? t("folderWatchOn") : t("folderWatchTitle");
+    item.textContent = on ? t("folderWatchMenuOn") : t("folderWatch");
+    if (on) item.removeAttribute("data-i18n");
+    else item.setAttribute("data-i18n", "folderWatch");
+  }
+
+  function updateFolderWatchFolderLabel(name) {
+    var lab = $("folderWatchFolderLabel");
+    if (!lab) return;
+    if (name) {
+      lab.removeAttribute("data-i18n");
+      lab.textContent = name;
+    } else {
+      lab.setAttribute("data-i18n", "folderWatchNoFolder");
+      lab.textContent = t("folderWatchNoFolder");
+    }
+  }
+
+  function stopFolderWatch() {
+    if (folderPollTimer) {
+      clearInterval(folderPollTimer);
+      folderPollTimer = null;
+    }
+    if (folderScanDebounce) {
+      clearTimeout(folderScanDebounce);
+      folderScanDebounce = null;
+    }
+    if (folderObserver && folderObserver.disconnect) {
+      try { folderObserver.disconnect(); } catch (e) { /* ignore */ }
+    }
+    folderObserver = null;
+    folderPendingStable = {};
+  }
+
+  function scheduleFolderScan() {
+    if (folderScanDebounce) clearTimeout(folderScanDebounce);
+    folderScanDebounce = setTimeout(function () {
+      folderScanDebounce = null;
+      scanWatchFolder();
+    }, 500);
+  }
+
+  function ensureFolderReadPermission(handle, allowRequest) {
+    if (!handle || !handle.queryPermission) return Promise.resolve(false);
+    return handle.queryPermission({ mode: "read" }).then(function (st) {
+      if (st === "granted") return true;
+      if (!allowRequest || !handle.requestPermission) return false;
+      return handle.requestPermission({ mode: "read" }).then(function (n) {
+        return n === "granted";
+      }).catch(function () { return false; });
+    }).catch(function () { return false; });
+  }
+
+  function iterateFolderImageFiles(handle, onFile) {
+    if (!handle || !handle.values) return Promise.resolve();
+    var it = handle.values();
+    function next() {
+      return it.next().then(function (res) {
+        if (res.done) return;
+        var entry = res.value;
+        if (!entry || entry.kind !== "file") return next();
+        return entry.getFile().then(function (file) {
+          if (file && file.type && file.type.indexOf("image/") === 0) onFile(file);
+          return next();
+        }).catch(function () { return next(); });
+      });
+    }
+    return next();
+  }
+
+  function seedFolderSeenFromHandle(handle) {
+    return iterateFolderImageFiles(handle, function (file) {
+      folderSeenKeys[folderFileKey(file)] = true;
+    }).then(function () {
+      persistFolderSeen();
+    });
+  }
+
+  function scanWatchFolder() {
+    if (!folderWatch.enabled || !folderHandle || !canvasId || folderScanBusy) return;
+    folderScanBusy = true;
+    ensureFolderReadPermission(folderHandle, false).then(function (ok) {
+      if (!ok) {
+        folderScanBusy = false;
+        return;
+      }
+      var fresh = [];
+      var alive = {};
+      return iterateFolderImageFiles(folderHandle, function (file) {
+        var key = folderFileKey(file);
+        alive[key] = true;
+        if (folderSeenKeys[key]) return;
+
+        // Wait until size/mtime stay unchanged across scans (file write finished).
+        var prev = folderPendingStable[key];
+        if (!prev || prev.size !== file.size || prev.lastModified !== file.lastModified) {
+          folderPendingStable[key] = {
+            size: file.size,
+            lastModified: file.lastModified,
+            hits: 1,
+            file: file,
+          };
+          return;
+        }
+        prev.hits += 1;
+        prev.file = file;
+        if (prev.hits < 2) return;
+
+        folderSeenKeys[key] = true;
+        delete folderPendingStable[key];
+        fresh.push(file);
+      }).then(function () {
+        Object.keys(folderPendingStable).forEach(function (k) {
+          if (!alive[k]) delete folderPendingStable[k];
+        });
+        if (!fresh.length) return;
+        persistFolderSeen();
+        addFiles(fresh, resolveFolderWatchTargetId());
+      });
+    }).catch(function () {
+      /* ignore scan errors */
+    }).then(function () {
+      folderScanBusy = false;
+    });
+  }
+
+  function startFolderWatch() {
+    stopFolderWatch();
+    if (!folderWatch.enabled || !folderHandle) {
+      updateFolderWatchBtn();
+      return;
+    }
+    updateFolderWatchBtn();
+    if (typeof FileSystemObserver === "function") {
+      try {
+        folderObserver = new FileSystemObserver(function () {
+          scheduleFolderScan();
+        });
+        folderObserver.observe(folderHandle, { recursive: false });
+      } catch (e) {
+        folderObserver = null;
+      }
+    }
+    // Polling is a backup; observer + debounce cover most updates.
+    folderPollTimer = setInterval(scheduleFolderScan, FOLDER_POLL_MS);
+    scheduleFolderScan();
+  }
+
+  function openFolderWatchModal() {
+    var modal = $("folderWatchModal");
+    if (!modal) return;
+    folderModalDraft.enabled = !!folderWatch.enabled;
+    folderModalDraft.targetLayoutId = folderWatch.targetLayoutId || canvasId;
+    folderModalDraft.folderName = folderWatch.folderName || (folderHandle && folderHandle.name) || "";
+    folderModalDraft.handle = folderHandle;
+    folderModalDraft.clearHandle = false;
+
+    var en = $("folderWatchEnabled");
+    if (en) en.checked = folderModalDraft.enabled;
+    fillFolderWatchTargetSelect($("folderWatchTarget"), folderModalDraft.targetLayoutId);
+    updateFolderWatchFolderLabel(folderModalDraft.folderName);
+
+    var hint = $("folderWatchSupportHint");
+    if (hint) {
+      if (!supportsFolderWatch()) {
+        hint.hidden = false;
+        hint.setAttribute("data-i18n", "folderWatchUnsupported");
+        hint.textContent = t("folderWatchUnsupported");
+      } else {
+        hint.hidden = true;
+        hint.textContent = "";
+      }
+    }
+    var pickBtn = $("folderWatchPickBtn");
+    if (pickBtn) pickBtn.disabled = !supportsFolderWatch();
+
+    modal.hidden = false;
+  }
+
+  function closeFolderWatchModal() {
+    var modal = $("folderWatchModal");
+    if (modal) modal.hidden = true;
+  }
+
+  function saveFolderWatchModal() {
+    var en = $("folderWatchEnabled");
+    var target = $("folderWatchTarget");
+    var wantEnable = !!(en && en.checked);
+    var targetId = target && target.value ? target.value : canvasId;
+
+    if (wantEnable && !folderModalDraft.handle && !folderHandle) {
+      status(t("folderWatchNeedFolder"), "err");
+      return;
+    }
+    if (wantEnable && !supportsFolderWatch()) {
+      status(t("folderWatchUnsupported"), "err");
+      return;
+    }
+
+    var prevHandle = folderHandle;
+    if (folderModalDraft.clearHandle) {
+      folderHandle = null;
+      folderWatch.folderName = "";
+      idb("del", "watchFolder").catch(function () {});
+      folderSeenKeys = {};
+      persistFolderSeen();
+    } else if (folderModalDraft.handle) {
+      folderHandle = folderModalDraft.handle;
+      folderWatch.folderName = folderHandle.name || folderModalDraft.folderName || "";
+    }
+
+    folderWatch.enabled = wantEnable && !!folderHandle;
+    folderWatch.targetLayoutId = targetId && layouts[targetId] ? targetId : canvasId;
+    persistFolderWatchSettings();
+
+    var finish = function () {
+      if (folderHandle) {
+        return idb("put", "watchFolder", folderHandle).catch(function () { return null; });
+      }
+      return Promise.resolve();
+    };
+
+    var afterSeed = Promise.resolve();
+    if (folderWatch.enabled && folderHandle && folderHandle !== prevHandle) {
+      folderSeenKeys = {};
+      afterSeed = seedFolderSeenFromHandle(folderHandle);
+    } else if (folderWatch.enabled && folderHandle && !Object.keys(folderSeenKeys).length) {
+      afterSeed = seedFolderSeenFromHandle(folderHandle);
+    }
+
+    afterSeed.then(finish).then(function () {
+      if (folderWatch.enabled) startFolderWatch();
+      else stopFolderWatch();
+      updateFolderWatchBtn();
+      closeFolderWatchModal();
+      status(t("folderWatchSaved"), "ok");
+    });
+  }
+
+  function pickWatchFolder() {
+    if (!supportsFolderWatch()) {
+      status(t("folderWatchUnsupported"), "err");
+      return;
+    }
+    window.showDirectoryPicker({ mode: "read" }).then(function (handle) {
+      folderModalDraft.handle = handle;
+      folderModalDraft.clearHandle = false;
+      folderModalDraft.folderName = handle.name || "";
+      updateFolderWatchFolderLabel(folderModalDraft.folderName);
+    }).catch(function (e) {
+      if (!e || e.name !== "AbortError") status(String((e && e.message) || e), "err");
+    });
+  }
+
+  function clearWatchFolderDraft() {
+    folderModalDraft.handle = null;
+    folderModalDraft.clearHandle = true;
+    folderModalDraft.folderName = "";
+    updateFolderWatchFolderLabel("");
+  }
+
+  function restoreFolderWatchOnBoot() {
+    loadFolderWatchSettings();
+    updateFolderWatchBtn();
+    if (!supportsFolderWatch()) return;
+    idb("get", "watchFolder").then(function (h) {
+      folderHandle = h || null;
+      if (folderHandle && !folderWatch.folderName) {
+        folderWatch.folderName = folderHandle.name || "";
+        persistFolderWatchSettings();
+      }
+      updateFolderWatchBtn();
+      if (!folderWatch.enabled || !folderHandle) return;
+      return ensureFolderReadPermission(folderHandle, true).then(function (ok) {
+        if (!ok) {
+          status(t("folderWatchPermission"), "err");
+          return;
+        }
+        var seed = Object.keys(folderSeenKeys).length
+          ? Promise.resolve()
+          : seedFolderSeenFromHandle(folderHandle);
+        return seed.then(function () { startFolderWatch(); });
+      });
+    }).catch(function () {});
+  }
+
   function dataTransferHasFiles(dt) {
     if (!dt || !dt.types) return false;
     for (var i = 0; i < dt.types.length; i++) {
@@ -1337,7 +1744,10 @@
         }
         var tx = db.transaction("handles", op === "get" ? "readonly" : "readwrite");
         var store = tx.objectStore("handles");
-        var r = op === "get" ? store.get(key) : store.put(val, key);
+        var r;
+        if (op === "get") r = store.get(key);
+        else if (op === "del") r = store.delete(key);
+        else r = store.put(val, key);
         r.onsuccess = function () { resolve(op === "get" ? r.result || null : null); };
         r.onerror = function () { reject(r.error); };
         tx.oncomplete = function () { db.close(); };
@@ -2456,18 +2866,32 @@
     requestAutoExport(true);
   };
 
-  el.reflowBtn.onclick = function () {
-    var L = lay();
-    if (!L || isCanvas(L.id)) return status(t("errNoGridOnCanvas"), "err");
-    writeForm();
-    pushUndo();
-    reflow(L);
-    selectedChild = -1;
-    clearImageSel();
-    refresh();
-    status(t("reflowDone"), "ok");
-    requestAutoExport(true);
-  };
+  if ($("folderWatchMenuBtn")) {
+    $("folderWatchMenuBtn").onclick = function () {
+      closeAddMenu();
+      openFolderWatchModal();
+    };
+  }
+  if ($("folderWatchPickBtn")) {
+    $("folderWatchPickBtn").onclick = pickWatchFolder;
+  }
+  if ($("folderWatchClearBtn")) {
+    $("folderWatchClearBtn").onclick = clearWatchFolderDraft;
+  }
+  if ($("folderWatchSaveBtn")) {
+    $("folderWatchSaveBtn").onclick = saveFolderWatchModal;
+  }
+  document.querySelectorAll("[data-folder-watch-close]").forEach(function (node) {
+    node.addEventListener("click", closeFolderWatchModal);
+  });
+  window.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+    var modal = $("folderWatchModal");
+    if (modal && !modal.hidden) {
+      e.preventDefault();
+      closeFolderWatchModal();
+    }
+  });
 
   var formKeys = [
     el.padL, el.padR, el.padT, el.padB,
@@ -2678,6 +3102,16 @@
     applyZoom();
     renderTree();
     refreshPngPathLabel();
+    updateFolderWatchBtn();
+    var modal = $("folderWatchModal");
+    if (modal && !modal.hidden) {
+      fillFolderWatchTargetSelect(
+        $("folderWatchTarget"),
+        ($("folderWatchTarget") && $("folderWatchTarget").value) || folderWatch.targetLayoutId || canvasId
+      );
+      var draftName = folderModalDraft.folderName || (folderModalDraft.handle && folderModalDraft.handle.name) || "";
+      updateFolderWatchFolderLabel(draftName);
+    }
     var statusKey = I18N.findKeyByText(el.status.textContent);
     if (statusKey) {
       var kind = el.status.classList.contains("ok")
@@ -2701,6 +3135,8 @@
   activeId = canvasId;
   readForm();
   refresh();
+  updateFolderWatchBtn();
+  restoreFolderWatchOnBoot();
   if (typeof window.showSaveFilePicker === "function") {
     idb("get", "png").then(function (h) {
       pngHandle = h;

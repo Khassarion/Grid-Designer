@@ -3,3 +3,9 @@
 Thumbs.db
 data/
 node_modules/
+tutorial-assets/_samples/
+.playwright-mcp/
+tutorial-check.png
+editor-check.png
+
+.cursor/
