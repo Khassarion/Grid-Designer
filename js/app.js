@@ -45,7 +45,11 @@
   var selectedChild = -1;
   /** Preview selection: canvas images + any layout frame { parentId, index } */
   var previewSel = { parentId: null, index: -1 };
-  /** Sibling reorder in hierarchy tree: { parentId, index } */
+  /** Multi-selected images in hierarchy: [{ parentId, index }, ...] */
+  var imageSel = [];
+  /** Shift-click range anchor for image multi-select */
+  var imageSelAnchor = null;
+  /** Sibling reorder / preview reparent drag: { parentId, index } */
   var childDrag = null;
   /** Collapsed layout ids in hierarchy tree */
   var collapsed = {};
@@ -262,9 +266,10 @@
     var cells = computeGrid(L.children.length, L.settings);
     var s = ns(L.settings);
     L.children.forEach(function (ch, i) {
-      var z = ch.frame && ch.frame.z != null ? ch.frame.z : i + 1;
+      // Keep stack order identical to hierarchy / children order.
       ch.frame = makeFrame(cells[i], i);
-      ch.frame.z = z;
+      ch.frame.z = i + 1;
+      if (ch.frame.z > maxZ) maxZ = ch.frame.z;
       if (ch.type === "layout" && layouts[ch.refId]) {
         layouts[ch.refId].settings.width = s.cell_w;
         layouts[ch.refId].settings.height = s.cell_h;
@@ -309,27 +314,65 @@
   }
 
   function snapResizeRect(x, y, w, h, handle, guides, thresh) {
-    var right = x + w;
-    var bottom = y + h;
-    if (handle.indexOf("e") >= 0) {
-      right += snapDelta([right], guides.x, thresh);
-      w = Math.max(24, right - x);
+    var hx = handle || "";
+    var nx = x, ny = y, nw = w, nh = h;
+    if (hx.indexOf("e") >= 0) {
+      var r = snapDelta([x + w], guides.x, thresh);
+      nw = Math.max(24, w + r);
     }
-    if (handle.indexOf("w") >= 0) {
-      var nx = x + snapDelta([x], guides.x, thresh);
-      w = Math.max(24, right - nx);
-      x = right - w;
+    if (hx.indexOf("w") >= 0) {
+      var l = snapDelta([x], guides.x, thresh);
+      nx = x + l;
+      nw = Math.max(24, w - l);
     }
-    if (handle.indexOf("s") >= 0) {
-      bottom += snapDelta([bottom], guides.y, thresh);
-      h = Math.max(24, bottom - y);
+    if (hx.indexOf("s") >= 0) {
+      var b = snapDelta([y + h], guides.y, thresh);
+      nh = Math.max(24, h + b);
     }
-    if (handle.indexOf("n") >= 0) {
-      var ny = y + snapDelta([y], guides.y, thresh);
-      h = Math.max(24, bottom - ny);
-      y = bottom - h;
+    if (hx.indexOf("n") >= 0) {
+      var t = snapDelta([y], guides.y, thresh);
+      ny = y + t;
+      nh = Math.max(24, h - t);
+    }
+    return { x: nx, y: ny, w: nw, h: nh };
+  }
+
+  /** Keep resize aspect ratio from original frame (Shift). */
+  function applyAspectLock(x, y, w, h, o, hd, minSize) {
+    var ratio = o.w / Math.max(1e-6, o.h);
+    minSize = minSize || 24;
+    w = Math.max(minSize, w);
+    h = Math.max(minSize, h);
+    hd = hd || "se";
+
+    if (hd === "e" || hd === "w") {
+      h = w / ratio;
+      if (h < minSize) { h = minSize; w = h * ratio; }
+      y = o.y + (o.h - h) / 2;
+      x = hd === "w" ? o.x + o.w - w : o.x;
+    } else if (hd === "n" || hd === "s") {
+      w = h * ratio;
+      if (w < minSize) { w = minSize; h = w / ratio; }
+      x = o.x + (o.w - w) / 2;
+      y = hd === "n" ? o.y + o.h - h : o.y;
+    } else {
+      var dw = Math.abs(w - o.w);
+      var dh = Math.abs(h - o.h);
+      if (dw >= dh * ratio) h = w / ratio;
+      else w = h * ratio;
+      if (w < minSize) { w = minSize; h = w / ratio; }
+      if (h < minSize) { h = minSize; w = h * ratio; }
+      x = hd.indexOf("w") >= 0 ? o.x + o.w - w : o.x;
+      y = hd.indexOf("n") >= 0 ? o.y + o.h - h : o.y;
     }
     return { x: x, y: y, w: w, h: h };
+  }
+
+  function getSelectedCanvasImageFrame() {
+    if (!canvasId || activeId !== canvasId || selectedChild < 0) return null;
+    var ch = layouts[canvasId] && layouts[canvasId].children[selectedChild];
+    if (!ch || ch.type !== "image" || !ch.frame) return null;
+    return ch.frame;
   }
 
   function reflowIfLayout(id) {
@@ -343,6 +386,13 @@
     });
   }
 
+  /** Canvas: free z-order. Layout: hierarchy / children array order. */
+  function childPaintOrder(L) {
+    if (!L) return [];
+    if (isCanvas(L.id)) return byZ(L);
+    return L.children.map(function (_, i) { return i; });
+  }
+
   function fillAlign(sel) {
     sel.replaceChildren();
     ALIGNS.forEach(function (k) {
@@ -354,15 +404,93 @@
   }
 
   function canRemoveSelected() {
+    if (imageSel.length > 0) return true;
     if (selectedChild >= 0) return true;
     return !!(activeId && !isCanvas(activeId) && layouts[activeId]);
+  }
+
+  function imageSelKey(parentId, index) {
+    return parentId + "\0" + index;
+  }
+
+  function isImageSelected(parentId, index) {
+    for (var i = 0; i < imageSel.length; i++) {
+      if (imageSel[i].parentId === parentId && imageSel[i].index === index) return true;
+    }
+    return false;
+  }
+
+  function clearImageSel() {
+    imageSel = [];
+    imageSelAnchor = null;
+  }
+
+  function normalizeImageSel(list) {
+    var seen = {};
+    var out = [];
+    (list || []).forEach(function (r) {
+      if (!r) return;
+      var parent = layouts[r.parentId];
+      var ch = parent && parent.children[r.index];
+      if (!ch || ch.type !== "image") return;
+      var key = imageSelKey(r.parentId, r.index);
+      if (seen[key]) return;
+      seen[key] = true;
+      out.push({ parentId: r.parentId, index: r.index });
+    });
+    return out;
+  }
+
+  function applyImageSel(list, primary) {
+    imageSel = normalizeImageSel(list);
+    if (!imageSel.length) {
+      selectedChild = -1;
+      if (previewSel.parentId && layouts[previewSel.parentId]) {
+        var pch = layouts[previewSel.parentId].children[previewSel.index];
+        if (!pch || pch.type === "image") previewSel = { parentId: null, index: -1 };
+      }
+      return;
+    }
+    var prim = primary && isImageSelected(primary.parentId, primary.index)
+      ? primary
+      : imageSel[imageSel.length - 1];
+    activeId = prim.parentId;
+    selectedChild = prim.index;
+    previewSel = { parentId: prim.parentId, index: prim.index };
+    expandAncestors(prim.parentId);
+  }
+
+  function imagesInSiblingRange(parentId, a, b) {
+    var parent = layouts[parentId];
+    if (!parent) return [];
+    var lo = Math.min(a, b);
+    var hi = Math.max(a, b);
+    var out = [];
+    for (var i = lo; i <= hi; i++) {
+      if (parent.children[i] && parent.children[i].type === "image") {
+        out.push({ parentId: parentId, index: i });
+      }
+    }
+    return out;
   }
 
   function syncChrome() {
     var isC = isCanvas(activeId);
     var locked = isSizeLocked(activeId);
+    var imgFr = getSelectedCanvasImageFrame();
     if (el.layoutSettings) el.layoutSettings.hidden = !!isC;
-    if (el.noLayoutHint) el.noLayoutHint.hidden = !isC;
+    if (el.noLayoutHint) {
+      el.noLayoutHint.hidden = !isC;
+      if (isC) {
+        var hintKey = imgFr ? "canvasImageHint" : "noLayoutHint";
+        el.noLayoutHint.setAttribute("data-i18n", hintKey);
+        el.noLayoutHint.textContent = t(hintKey);
+      }
+    }
+    if (el.heading) {
+      el.heading.textContent = isC ? t("settingsHeadingCanvas") : t("settingsHeading");
+      el.heading.setAttribute("data-i18n", isC ? "settingsHeadingCanvas" : "settingsHeading");
+    }
     if (el.layoutPresets) el.layoutPresets.hidden = isC || locked;
     el.sizeLockHint.hidden = !locked;
     el.w.disabled = locked;
@@ -387,6 +515,19 @@
     el.alignPad.querySelectorAll("button").forEach(function (b) {
       b.classList.toggle("active", b.dataset.align === el.childAlign.value);
     });
+    var sizeEl = $("canvasImageSize");
+    if (sizeEl) {
+      if (imgFr) {
+        sizeEl.hidden = false;
+        sizeEl.textContent = t("canvasImageSize", {
+          w: Math.round(imgFr.w),
+          h: Math.round(imgFr.h),
+        });
+      } else {
+        sizeEl.hidden = true;
+        sizeEl.textContent = "";
+      }
+    }
   }
 
   function readCanvasSize() {
@@ -490,6 +631,7 @@
     writeForm();
     activeId = id;
     selectedChild = -1;
+    clearImageSel();
     expandAncestors(id);
     if (id !== canvasId && layouts[id].parentId) {
       var kids = layouts[layouts[id].parentId].children;
@@ -506,7 +648,7 @@
     refresh();
   }
 
-  function selectChildNode(parentId, index) {
+  function selectChildNode(parentId, index, opts) {
     var parent = layouts[parentId];
     if (!parent || !parent.children[index]) return;
     writeForm();
@@ -515,26 +657,157 @@
       selectLayout(ch.refId);
       return;
     }
-    activeId = parentId;
-    selectedChild = index;
-    expandAncestors(parentId);
-    previewSel = isInteractiveChild(parentId, ch)
-      ? { parentId: parentId, index: index }
-      : { parentId: null, index: -1 };
+    opts = opts || {};
+    var toggle = !!opts.toggle;
+    var range = !!opts.range;
+    var primary = { parentId: parentId, index: index };
+
+    if (range && imageSelAnchor && imageSelAnchor.parentId === parentId) {
+      var ranged = imagesInSiblingRange(parentId, imageSelAnchor.index, index);
+      if (toggle) {
+        var merged = imageSel.slice();
+        ranged.forEach(function (r) {
+          if (!isImageSelected(r.parentId, r.index)) merged.push(r);
+        });
+        applyImageSel(merged, primary);
+      } else {
+        applyImageSel(ranged, primary);
+      }
+    } else if (toggle) {
+      var next = imageSel.slice();
+      if (isImageSelected(parentId, index)) {
+        next = next.filter(function (r) {
+          return !(r.parentId === parentId && r.index === index);
+        });
+        if (!next.length) {
+          clearImageSel();
+          selectedChild = -1;
+          previewSel = { parentId: null, index: -1 };
+          activeId = parentId;
+          imageSelAnchor = null;
+          readForm();
+          refresh();
+          return;
+        }
+        applyImageSel(next, next[next.length - 1]);
+      } else {
+        next.push(primary);
+        applyImageSel(next, primary);
+      }
+      imageSelAnchor = primary;
+    } else {
+      applyImageSel([primary], primary);
+      imageSelAnchor = primary;
+    }
+
     readForm();
     refresh();
+  }
+
+  function draggedImageRefs() {
+    if (!childDrag) return null;
+    var parent = layouts[childDrag.parentId];
+    var ch = parent && parent.children[childDrag.index];
+    if (!ch || ch.type !== "image") return null;
+    if (isImageSelected(childDrag.parentId, childDrag.index) && imageSel.length > 0) {
+      return imageSel.slice();
+    }
+    return [{ parentId: childDrag.parentId, index: childDrag.index }];
+  }
+
+  function prepareImageFrameForParent(ch, toParentId, slot) {
+    var entry = images[ch.refId];
+    var im = entry && entry.img;
+    var fw = (ch.frame && ch.frame.w) || (im && im.naturalWidth) || 200;
+    var fh = (ch.frame && ch.frame.h) || (im && im.naturalHeight) || 160;
+    if (isCanvas(toParentId)) {
+      maxZ += 1;
+      ch.frame = {
+        x: 24 + slot * 28,
+        y: 24 + slot * 28,
+        w: fw,
+        h: fh,
+        z: maxZ,
+      };
+    } else {
+      ch.frame = null;
+    }
+  }
+
+  function moveImagesToLayout(refs, toParentId) {
+    if (!toParentId || !layouts[toParentId]) return false;
+    var to = layouts[toParentId];
+    var ordered = [];
+    var seen = {};
+    (refs || []).forEach(function (r) {
+      var p = layouts[r.parentId];
+      var ch = p && p.children[r.index];
+      if (!ch || ch.type !== "image") return;
+      if (r.parentId === toParentId) return;
+      var key = ch.refId || (r.parentId + ":" + r.index);
+      if (seen[key]) return;
+      seen[key] = true;
+      ordered.push({ parentId: r.parentId, child: ch });
+    });
+    if (!ordered.length) return false;
+
+    pushUndo();
+    var touched = {};
+    ordered.forEach(function (item) {
+      var p = layouts[item.parentId];
+      if (!p) return;
+      var idx = p.children.indexOf(item.child);
+      if (idx >= 0) p.children.splice(idx, 1);
+      touched[item.parentId] = true;
+    });
+    Object.keys(touched).forEach(function (pid) {
+      if (!isCanvas(pid) && layouts[pid]) reflow(layouts[pid]);
+    });
+
+    var startSlot = to.children.length;
+    ordered.forEach(function (item, off) {
+      prepareImageFrameForParent(item.child, toParentId, startSlot + off);
+      to.children.push(item.child);
+    });
+    if (!isCanvas(toParentId)) reflow(to);
+
+    var newSel = ordered.map(function (item) {
+      return { parentId: toParentId, index: to.children.indexOf(item.child) };
+    }).filter(function (r) { return r.index >= 0; });
+    applyImageSel(newSel, newSel[newSel.length - 1] || null);
+    imageSelAnchor = newSel.length ? newSel[newSel.length - 1] : null;
+    readForm();
+    refresh();
+
+    var destName = to.name || t("layout");
+    if (ordered.length === 1) status(t("imageMoved", { name: destName }), "ok");
+    else status(t("imagesMoved", { n: ordered.length, name: destName }), "ok");
+    requestAutoExport(true);
+    return true;
   }
 
   function bindSiblingDrag(li, parentId, index) {
     li.draggable = true;
     li.ondragstart = function (e) {
+      var parent = layouts[parentId];
+      var ch = parent && parent.children[index];
+      if (ch && ch.type === "image" && !isImageSelected(parentId, index)) {
+        applyImageSel([{ parentId: parentId, index: index }], { parentId: parentId, index: index });
+        imageSelAnchor = { parentId: parentId, index: index };
+        renderTree();
+        refreshPreview();
+      }
       childDrag = { parentId: parentId, index: index };
       li.classList.add("dragging");
-      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", "grid-child"); } catch (err) { /* ignore */ }
+      }
     };
     li.ondragend = function () {
       childDrag = null;
       li.classList.remove("dragging");
+      clearDropHighlight();
     };
     li.ondragover = function (e) {
       if (!childDrag || childDrag.parentId !== parentId) return;
@@ -551,7 +824,13 @@
       pushUndo();
       var moved = parent.children.splice(childDrag.index, 1)[0];
       parent.children.splice(index, 0, moved);
-      if (activeId === parentId) selectedChild = index;
+      if (moved && moved.type === "image") {
+        applyImageSel([{ parentId: parentId, index: index }], { parentId: parentId, index: index });
+        imageSelAnchor = { parentId: parentId, index: index };
+      } else if (activeId === parentId) {
+        selectedChild = index;
+        if (previewSel.parentId === parentId) previewSel = { parentId: parentId, index: index };
+      }
       if (!isCanvas(parentId)) reflow(parent);
       refresh();
       requestAutoExport(true);
@@ -683,7 +962,7 @@
         }
 
         if (ch.type === "image") {
-          var imgActive = activeId === parentId && selectedChild === i;
+          var imgActive = isImageSelected(parentId, i);
           var entry = images[ch.refId];
           li.className = "tree-item tree-image" + (imgActive ? " active" : "");
 
@@ -698,7 +977,12 @@
           inm.className = "name";
           inm.textContent = entry ? entry.name : t("imageFallback");
           li.append(pad, spacer, thumb, inm);
-          li.onclick = function () { selectChildNode(parentId, i); };
+          li.onclick = function (e) {
+            selectChildNode(parentId, i, {
+              toggle: e.ctrlKey || e.metaKey,
+              range: e.shiftKey,
+            });
+          };
           bindSiblingDrag(li, parentId, i);
           el.tree.appendChild(li);
         }
@@ -719,7 +1003,7 @@
     container.style.background = L.transparentBg !== false ? "transparent" : (L.bgColor || "#000");
     container.replaceChildren();
 
-    byZ(L).forEach(function (i) {
+    childPaintOrder(L).forEach(function (i) {
       var ch = L.children[i];
       var f = ch.frame;
       var interactive = isInteractiveChild(layoutId, ch);
@@ -727,17 +1011,26 @@
       cell.className = "grid-cell" + (interactive ? " interactive" : "");
       cell.dataset.parentId = layoutId;
       cell.dataset.childIndex = String(i);
+      var stackZ = isCanvas(layoutId) ? (f.z || i + 1) : (i + 1);
       cell.style.cssText =
-        "left:" + f.x + "px;top:" + f.y + "px;width:" + f.w + "px;height:" + f.h + "px;z-index:" + (f.z || i + 1);
+        "left:" + f.x + "px;top:" + f.y + "px;width:" + f.w + "px;height:" + f.h + "px;z-index:" + stackZ;
       if (ch.type === "layout" && ch.refId === highlightId) cell.classList.add("highlight-nested");
-      if (interactive && previewSel.parentId === layoutId && previewSel.index === i) {
+      var selected = (ch.type === "image" && isImageSelected(layoutId, i)) ||
+        (previewSel.parentId === layoutId && previewSel.index === i);
+      var primary = previewSel.parentId === layoutId && previewSel.index === i;
+      if (selected) {
         cell.classList.add("selected");
-        ["nw", "n", "ne", "e", "se", "s", "sw", "w"].forEach(function (h) {
-          var d = document.createElement("div");
-          d.className = "resize-handle " + h;
-          d.dataset.handle = h;
-          cell.appendChild(d);
-        });
+        if (ch.type === "image" && !isCanvas(layoutId)) {
+          cell.classList.add("selected-nested-image");
+        }
+        if (interactive && primary) {
+          ["nw", "n", "ne", "e", "se", "s", "sw", "w"].forEach(function (h) {
+            var d = document.createElement("div");
+            d.className = "resize-handle " + h;
+            d.dataset.handle = h;
+            cell.appendChild(d);
+          });
+        }
       }
       if (ch.type === "image" && images[ch.refId] && images[ch.refId].img) {
         var img = document.createElement("img");
@@ -757,10 +1050,17 @@
         paint(nested, ch.refId, depth + 1, highlightId);
       }
       if (interactive) {
-        var lab = document.createElement("span");
-        lab.className = "grid-cell-label";
-        lab.textContent = String(i + 1) + (ch.type === "layout" ? " #" : "");
-        cell.appendChild(lab);
+        if (ch.type === "image" && isCanvas(layoutId) && selected && f) {
+          var sizeLab = document.createElement("span");
+          sizeLab.className = "grid-cell-size";
+          sizeLab.textContent = Math.round(f.w) + "×" + Math.round(f.h);
+          cell.appendChild(sizeLab);
+        } else {
+          var lab = document.createElement("span");
+          lab.className = "grid-cell-label";
+          lab.textContent = String(i + 1) + (ch.type === "layout" ? " #" : "");
+          cell.appendChild(lab);
+        }
       }
       container.appendChild(cell);
     });
@@ -775,7 +1075,7 @@
       ctx.fillStyle = L.bgColor || "#000";
       ctx.fillRect(ox, oy, s.width, s.height);
     }
-    byZ(L).forEach(function (i) {
+    childPaintOrder(L).forEach(function (i) {
       var ch = L.children[i];
       var f = ch.frame;
       var x = ox + f.x;
@@ -816,7 +1116,12 @@
     el.stage.style.transform = "scale(" + sc + ")";
     el.zoomLabel.textContent = Math.round(zoom * 100) + "%";
     var editName = activeId !== canvasId && layouts[activeId] ? layouts[activeId].name : t("canvas");
-    el.meta.textContent = t("metaLine", { w: s.width, h: s.height, edit: editName });
+    var meta = t("metaLine", { w: s.width, h: s.height, edit: editName });
+    var imgFr = getSelectedCanvasImageFrame();
+    if (imgFr) {
+      meta += " · " + t("imagePxSize", { w: Math.round(imgFr.w), h: Math.round(imgFr.h) });
+    }
+    el.meta.textContent = meta;
     if ($("zoomOutBtn")) $("zoomOutBtn").disabled = zoom <= 1;
     syncChrome();
   }
@@ -960,6 +1265,14 @@
     });
   }
 
+  function dataTransferHasFiles(dt) {
+    if (!dt || !dt.types) return false;
+    for (var i = 0; i < dt.types.length; i++) {
+      if (dt.types[i] === "Files") return true;
+    }
+    return false;
+  }
+
   function bindDrop(node, resolveLayoutId) {
     if (!node) return;
     var isPreview = node === el.wrap;
@@ -967,7 +1280,11 @@
       e.preventDefault();
       e.stopPropagation();
       if (isPreview && typeof resolveLayoutId === "function") {
-        setDropHighlight(resolveLayoutId(e));
+        if (draggedImageRefs() || dataTransferHasFiles(e.dataTransfer)) {
+          setDropHighlight(resolveLayoutId(e));
+        } else {
+          clearDropHighlight();
+        }
       } else {
         node.classList.add("dragover");
       }
@@ -982,11 +1299,22 @@
       e.stopPropagation();
       if (isPreview) clearDropHighlight();
       else node.classList.remove("dragover");
+
+      if (isPreview && draggedImageRefs()) {
+        var refs = draggedImageRefs();
+        var targetId = typeof resolveLayoutId === "function"
+          ? resolveLayoutId(e)
+          : null;
+        moveImagesToLayout(refs, targetId);
+        childDrag = null;
+        return;
+      }
+
       if (!e.dataTransfer || !e.dataTransfer.files.length) return;
-      var targetId = typeof resolveLayoutId === "function"
+      var fileTargetId = typeof resolveLayoutId === "function"
         ? resolveLayoutId(e)
         : null;
-      addFiles(e.dataTransfer.files, targetId || undefined);
+      addFiles(e.dataTransfer.files, fileTargetId || undefined);
     });
   }
 
@@ -1177,6 +1505,12 @@
       activeId: activeId,
       selectedChild: selectedChild,
       previewSel: { parentId: previewSel.parentId, index: previewSel.index },
+      imageSel: imageSel.map(function (r) {
+        return { parentId: r.parentId, index: r.index };
+      }),
+      imageSelAnchor: imageSelAnchor
+        ? { parentId: imageSelAnchor.parentId, index: imageSelAnchor.index }
+        : null,
       maxZ: maxZ,
     };
   }
@@ -1198,6 +1532,16 @@
     previewSel = snap.previewSel
       ? { parentId: snap.previewSel.parentId, index: snap.previewSel.index }
       : { parentId: null, index: -1 };
+    imageSel = normalizeImageSel(snap.imageSel || (
+      selectedChild >= 0 && layouts[activeId] &&
+      layouts[activeId].children[selectedChild] &&
+      layouts[activeId].children[selectedChild].type === "image"
+        ? [{ parentId: activeId, index: selectedChild }]
+        : []
+    ));
+    imageSelAnchor = snap.imageSelAnchor
+      ? { parentId: snap.imageSelAnchor.parentId, index: snap.imageSelAnchor.index }
+      : (imageSel.length ? imageSel[imageSel.length - 1] : null);
     maxZ = Math.max(1, +snap.maxZ || 1);
     readCanvasSize();
     readForm();
@@ -1270,6 +1614,7 @@
     activeId = null;
     selectedChild = -1;
     previewSel = { parentId: null, index: -1 };
+    clearImageSel();
     childDrag = null;
     collapsed = {};
     maxZ = 1;
@@ -1392,6 +1737,7 @@
       });
       selectedChild = -1;
       previewSel = { parentId: null, index: -1 };
+      clearImageSel();
       readForm();
       refresh();
     });
@@ -1446,11 +1792,12 @@
 
   function selectCanvasFromEmpty() {
     // No layout selected in tree; images add as top-level siblings of layouts
-    if (activeId !== canvasId || previewSel.parentId != null || selectedChild >= 0) {
+    if (activeId !== canvasId || previewSel.parentId != null || selectedChild >= 0 || imageSel.length) {
       selectLayout(canvasId);
     } else {
       previewSel = { parentId: null, index: -1 };
       selectedChild = -1;
+      clearImageSel();
       refresh();
     }
   }
@@ -1478,6 +1825,7 @@
       ch.frame.z = maxZ;
 
       if (ch.type === "layout" && layouts[ch.refId]) {
+        clearImageSel();
         if (activeId !== ch.refId) {
           activeId = ch.refId;
           selectedChild = -1;
@@ -1487,6 +1835,8 @@
         }
         expandAncestors(ch.refId);
       } else {
+        applyImageSel([{ parentId: parentId, index: idx }], { parentId: parentId, index: idx });
+        imageSelAnchor = { parentId: parentId, index: idx };
         if (activeId !== parentId) {
           activeId = parentId;
           readForm();
@@ -1555,7 +1905,9 @@
       if (w < 24) { if (hd.indexOf("w") >= 0) x = o.x + o.w - 24; w = 24; }
       if (h < 24) { if (hd.indexOf("n") >= 0) y = o.y + o.h - 24; h = 24; }
     }
-    if (snapEnabled) {
+    var lockAspect = e.shiftKey && drag.mode === "resize" &&
+      ch.type === "image" && isCanvas(drag.layoutId);
+    if (snapEnabled && !lockAspect) {
       var guides = collectSnapGuides(drag.layoutId, drag.index);
       var snapped = drag.mode === "move"
         ? snapMoveRect(x, y, w, h, guides, SNAP_THRESH)
@@ -1564,6 +1916,13 @@
       y = snapped.y;
       w = snapped.w;
       h = snapped.h;
+    }
+    if (lockAspect) {
+      var locked = applyAspectLock(x, y, w, h, o, drag.handle || "se", 24);
+      x = locked.x;
+      y = locked.y;
+      w = locked.w;
+      h = locked.h;
     }
     ch.frame.x = Math.round(x);
     ch.frame.y = Math.round(y);
@@ -1694,6 +2053,33 @@
   }
 
   function removeSelected() {
+    if (imageSel.length > 0) {
+      var refs = imageSel.slice().sort(function (a, b) {
+        if (a.parentId !== b.parentId) return a.parentId < b.parentId ? -1 : 1;
+        return b.index - a.index;
+      });
+      pushUndo();
+      var touched = {};
+      var n = 0;
+      refs.forEach(function (r) {
+        var parent = layouts[r.parentId];
+        if (!parent || !parent.children[r.index] || parent.children[r.index].type !== "image") return;
+        parent.children.splice(r.index, 1);
+        touched[r.parentId] = true;
+        n += 1;
+      });
+      Object.keys(touched).forEach(function (pid) {
+        if (!isCanvas(pid) && layouts[pid]) reflow(layouts[pid]);
+      });
+      clearImageSel();
+      selectedChild = -1;
+      previewSel = { parentId: null, index: -1 };
+      refresh();
+      status(n === 1 ? t("imageRemoved") : t("imagesRemoved", { n: n }), "ok");
+      requestAutoExport(true);
+      return true;
+    }
+
     var L = lay();
     if (!L) return false;
     if (selectedChild >= 0) {
@@ -1708,6 +2094,7 @@
       L.children.splice(selectedChild, 1);
       selectedChild = -1;
       previewSel = { parentId: null, index: -1 };
+      clearImageSel();
       if (!isCanvas(L.id)) reflow(L);
       refresh();
       status(t("imageRemoved"), "ok");
@@ -2035,6 +2422,7 @@
     L.children = [];
     selectedChild = -1;
     previewSel = { parentId: null, index: -1 };
+    clearImageSel();
     if (!isCanvas(L.id)) reflow(L);
     refresh();
     requestAutoExport(true);
@@ -2047,6 +2435,7 @@
     pushUndo();
     reflow(L);
     selectedChild = -1;
+    clearImageSel();
     refresh();
     status(t("reflowDone"), "ok");
     requestAutoExport(true);

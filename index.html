@@ -15,12 +15,13 @@
     <header class="app-bar">
       <div class="app-bar-left">
         <span class="app-brand">Grid Composer</span>
+        <a class="app-tutorial-link" href="tutorial.html" data-i18n="tutorial" data-i18n-title="tutorialTitle">튜토리얼</a>
         <div class="app-bar-group" data-i18n-title="projectGroupTitle">
           <label class="file-pick-label" for="projectInput" data-i18n="open">열기</label>
           <input id="projectInput" class="file-input" type="file" accept="application/json,.json" />
           <button id="saveProjectBtn" type="button" data-i18n="save">저장</button>
           <label class="checkbox-row compact" for="saveWithImages" data-i18n-title="includeImagesTitle">
-            <input id="saveWithImages" type="checkbox" />
+            <input id="saveWithImages" type="checkbox" checked />
             <span data-i18n="includeImages">이미지 포함</span>
           </label>
         </div>
@@ -70,8 +71,9 @@
 
         <div class="side-block side-settings">
           <div class="panel-scroll">
-            <h2 id="settingsHeading" data-i18n="settingsHeading">레이아웃 설정</h2>
-            <p id="noLayoutHint" class="muted" data-i18n="noLayoutHint">캔버스 선택됨 · 이미지 추가 시 최상위 레이아웃과 형제로 들어갑니다. 미리보기 빈 곳을 클릭해도 여기로 옵니다.</p>
+            <h2 id="settingsHeading" data-i18n="settingsHeadingCanvas">캔버스</h2>
+            <p id="noLayoutHint" class="muted" data-i18n="noLayoutHint">캔버스가 선택되어 있습니다. 이미지·레이아웃은 캔버스에 바로 추가됩니다. 미리보기의 레이아웃 위에 이미지를 드롭하면 그 레이아웃으로 들어갑니다.</p>
+            <p id="canvasImageSize" class="muted size-readout" hidden></p>
 
             <div id="layoutSettingsBlock" hidden>
             <div class="form-grid" id="layoutSizeRow">

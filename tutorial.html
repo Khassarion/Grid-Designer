@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<!--
+  Grid Composer — Tutorial
+  Copyright (c) 2026 AINukeHere
+  SPDX-License-Identifier: LicenseRef-GridComposer-Proprietary
+-->
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>튜토리얼 — Grid Composer</title>
+    <meta
+      name="description"
+      content="후원 이미지로 OBS 벽지를 만드는 Grid Composer 사용법. PNG 경로·OBS 설정부터 레이아웃·자동 내보내기까지."
+    />
+    <link rel="stylesheet" href="tutorial.css" />
+  </head>
+  <body>
+    <header class="top-bar">
+      <a class="brand" href="index.html">Grid Composer<span>튜토리얼</span></a>
+      <div class="top-actions">
+        <a class="btn btn-primary" href="index.html">에디터 열기</a>
+      </div>
+    </header>
+
+    <div class="shell">
+      <nav class="toc" aria-label="목차">
+        <h2>목차</h2>
+        <ol>
+          <li><a href="#start">처음 열었을 때</a></li>
+          <li><a href="#png-obs">PNG 경로 · OBS</a></li>
+          <li><a href="#add-image">이미지 추가</a></li>
+          <li><a href="#add-layout">레이아웃 추가</a></li>
+          <li><a href="#auto-export">자동 내보내기</a></li>
+          <li><a href="#direction">벽지 방향</a></li>
+          <li><a href="#cell-size">셀 크기</a></li>
+          <li><a href="#copy">복사 · 복제</a></li>
+          <li><a href="#move">이미지 옮기기</a></li>
+          <li><a href="#save">구조 저장 · 불러오기</a></li>
+        </ol>
+      </nav>
+
+      <main class="main">
+        <header class="hero">
+          <h1>후원 이미지 벽지 튜토리얼</h1>
+          <p class="lede">
+            Grid Composer로 후원·도네이션 이미지를 격자처럼 붙여 OBS에 올리는 방법을,
+            페이지를 처음 연 순간부터 순서대로 안내합니다.
+          </p>
+          <p class="meta">
+            Chrome / Edge 권장 ·
+            <a href="index.html">에디터</a>와 같은 폴더의 정적 페이지입니다.
+          </p>
+        </header>
+
+        <section class="step" id="start">
+          <span class="step-num">STEP 01</span>
+          <h2>페이지를 처음 열었을 때</h2>
+          <p>
+            에디터를 열면 가운데에 빈 <strong>캔버스</strong>(내보낼 PNG 크기)가 보입니다.
+            왼쪽은 <span class="ui">계층 구조</span>와 설정, 위쪽 앱 바에서 저장·내보내기를 합니다.
+          </p>
+          <ol>
+            <li>미리보기 상단에서 캔버스 크기를 방송 해상도에 맞춥니다. 보통 <strong>1920×1080</strong>이면 충분합니다.</li>
+            <li>벽지를 오버레이로 쓸 거면 왼쪽 설정에서 <span class="ui">배경 투명</span>을 켠 채로 두세요. (기본 ON)</li>
+            <li>언어는 오른쪽 위 한국어 / English에서 바꿀 수 있습니다.</li>
+          </ol>
+          <div class="callout">
+            <p>
+              <strong>한 줄 요약:</strong> 캔버스 = PNG 전체 화면,
+              <strong>레이아웃</strong> = 후원 이미지를 붙이는 격자 영역입니다.
+              벽지는 보통 레이아웃을 하나(또는 좌·우·하단 여러 개) 두고 그 안에 이미지를 넣습니다.
+            </p>
+          </div>
+        </section>
+
+        <section class="step" id="png-obs">
+          <span class="step-num">STEP 02</span>
+          <h2>PNG 내보내기 경로 정하기 · OBS 송출 설정</h2>
+          <p>
+            작업할 때마다 다운로드 폴더에 파일이 쌓이지 않게, <strong>같은 파일 경로에 덮어쓰기</strong>하도록 위치를 고정합니다.
+            OBS는 그 파일을 이미지 소스로 띄우면 됩니다.
+          </p>
+
+          <h3>에디터에서</h3>
+          <ol>
+            <li>오른쪽 위 <span class="ui">위치 변경</span>을 누릅니다. (Chrome / Edge에서만 지원)</li>
+            <li>저장할 폴더와 파일 이름을 정합니다. 예: <code>C:\OBS\overlay\donation-wall.png</code></li>
+            <li>한 번 지정하면 이후 <span class="ui">내보내기</span>와 <span class="ui">자동 내보내기</span>가 그 파일을 덮어씁니다.</li>
+            <li>앱 바 가운데에 <strong>PNG: 파일이름</strong>이 보이면 경로가 잡힌 상태입니다.</li>
+          </ol>
+          <div class="callout warn">
+            <p>
+              위치 고정이 안 되는 브라우저(일부 Firefox 등)에서는 매번 다운로드로 저장됩니다.
+              스트리밍용으로는 Chrome 또는 Edge를 권장합니다.
+            </p>
+          </div>
+
+          <h3>OBS Studio에서</h3>
+          <ol>
+            <li>장면(Scene)에 <strong>소스 추가 → 이미지(Image)</strong>를 고릅니다.</li>
+            <li><strong>이미지 파일</strong>에 위에서 정한 PNG 경로를 지정합니다.</li>
+            <li>캔버스가 1920×1080이면 소스 크기를 화면에 맞게 맞추거나, 필요하면 크롭·위치로 좌우·하단만 보이게 배치합니다.</li>
+            <li>투명 PNG를 쓰므로 벽지 뒤 캠·게임 화면이 그대로 비칩니다.</li>
+          </ol>
+          <div class="callout">
+            <p>
+              <strong>파일이 바뀌었는데 OBS에 안 보일 때:</strong>
+              OBS 기본 이미지 소스는 파일이 바뀌어도 바로 다시 읽지 않는 경우가 있습니다.
+              소스를 숨겼다 다시 켜거나, 장면 전환, 또는 이미지 감시(리로드) 플러그인을 쓰면 편합니다.
+              작업 중에는 에디터 미리보기로 확인하고, 방송 직전에 한 번 더 내보내기해도 됩니다.
+            </p>
+          </div>
+          <p>
+            단축키: <span class="kbd">Ctrl</span>+<span class="kbd">S</span> = PNG 내보내기
+          </p>
+        </section>
+
+        <section class="step" id="add-image">
+          <span class="step-num">STEP 03</span>
+          <h2>이미지 추가하기</h2>
+          <p>
+            후원 이미지(이모티콘, 배지, 캡처 등)를 레이아웃(또는 캔버스)에 넣습니다.
+            레이아웃 안의 이미지는 격자 셀에 맞춰지며, 셀을 꽉 채웁니다.
+          </p>
+          <ol>
+            <li>왼쪽 <span class="ui">계층 구조</span>에서 이미지를 넣을 <strong>레이아웃</strong>(또는 캔버스)을 클릭해 선택합니다.</li>
+            <li><span class="ui">추가 ▾</span> → <span class="ui">이미지 추가</span>로 파일을 고릅니다. 여러 장을 한 번에 선택할 수 있습니다.</li>
+            <li>또는 미리보기에서 원하는 레이아웃 위로 이미지 파일을 <strong>드래그 앤 드롭</strong>합니다.</li>
+          </ol>
+          <div class="callout ok">
+            <p>
+              레이아웃을 아직 안 만들었으면 이미지가 캔버스에 바로 올라갑니다.
+              벽지용 격자 배치를 원하면 다음 단계에서 레이아웃을 먼저 만든 뒤 이미지를 넣는 편이 낫습니다.
+            </p>
+          </div>
+        </section>
+
+        <section class="step" id="add-layout">
+          <span class="step-num">STEP 04</span>
+          <h2>레이아웃 추가하기</h2>
+          <p>
+            레이아웃은 “후원 이미지를 바르는 띠·패널”입니다.
+            좌측 세로 벽지, 하단 가로 띠처럼 여러 장을 둘 수 있습니다.
+          </p>
+          <ol>
+            <li>계층에서 <strong>캔버스</strong>를 선택한 뒤 <span class="ui">추가 ▾</span> → <span class="ui">레이아웃 추가</span>를 누릅니다.</li>
+            <li>미리보기에서 레이아웃 테두리를 드래그해 위치·크기를 맞춥니다. <span class="ui">자석</span>이 켜져 있으면 가장자리에 잘 붙습니다.</li>
+            <li>빠른 크기: 설정 패널의 프리셋 <strong>200×1080</strong>(세로 띠), <strong>1920×160</strong>(하단 띠), <strong>400×1080</strong> 등을 씁니다.</li>
+            <li>이름이 헷갈리면 계층의 레이아웃 이름을 <strong>더블클릭</strong>해 바꿉니다. (예: 좌측벽, 하단띠)</li>
+          </ol>
+          <p>
+            레이아웃 안에 다시 레이아웃을 넣을 수도 있습니다(중첩).
+            하위 레이아웃은 부모 셀 크기에 잠기며, 안쪽은 1:1로 그려집니다.
+          </p>
+        </section>
+
+        <section class="step" id="auto-export">
+          <span class="step-num">STEP 05</span>
+          <h2>자동 내보내기</h2>
+          <p>
+            후원이 들어올 때마다(또는 이미지를 넣을 때마다) 수동으로 내보내기 누르기 싫다면
+            <span class="ui">자동 내보내기</span>를 켭니다.
+          </p>
+          <ol>
+            <li>먼저 <a href="#png-obs">STEP 02</a>에서 PNG 위치를 고정해 둡니다.</li>
+            <li>오른쪽 위 <span class="ui">자동 내보내기</span> 체크박스를 켭니다.</li>
+            <li>이미지 추가·삭제, 레이아웃·배치 설정 변경 등 구조가 바뀔 때마다 PNG가 같은 파일로 저장됩니다.</li>
+          </ol>
+          <div class="callout">
+            <p>
+              미리보기에서 크기·위치를 <strong>드래그하는 동안</strong>에는 저장하지 않고,
+              손을 뗀 뒤에만 저장합니다. 숫자 입력도 입력이 끝난 뒤에 반영됩니다.
+            </p>
+          </div>
+        </section>
+
+        <section class="step" id="direction">
+          <span class="step-num">STEP 06</span>
+          <h2>벽지 바르는 방향 정하기</h2>
+          <p>
+            레이아웃을 선택한 뒤 왼쪽 <strong>배치</strong>에서 이미지가 쌓이는 방향을 정합니다.
+            세 가지를 같이 보면 됩니다.
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>설정</th>
+                  <th>의미</th>
+                  <th>벽지 예</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>시작 코너</td>
+                  <td>첫 번째 이미지가 붙는 모서리</td>
+                  <td>왼쪽 위부터 / 오른쪽 아래부터</td>
+                </tr>
+                <tr>
+                  <td>시작 축</td>
+                  <td>먼저 채우는 방향 (수평 또는 수직)</td>
+                  <td>가로로 한 줄 → 다음 줄 / 세로로 한 열 → 다음 열</td>
+                </tr>
+                <tr>
+                  <td>자식 정렬</td>
+                  <td>셀들이 모인 <strong>덩어리 전체</strong>가 레이아웃 안 어디에 붙는지 (9방향)</td>
+                  <td>이미지가 적어도 하단·우측에 몰아 두기</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="diagram" aria-hidden="true">
+            <figure>
+              <div class="mini-grid">
+                <div class="cell" style="left: 6%; top: 8%; width: 22%; height: 28%">1</div>
+                <div class="cell" style="left: 32%; top: 8%; width: 22%; height: 28%">2</div>
+                <div class="cell" style="left: 58%; top: 8%; width: 22%; height: 28%">3</div>
+                <div class="cell" style="left: 6%; top: 42%; width: 22%; height: 28%">4</div>
+              </div>
+              <figcaption>시작 코너: 좌측 상단 · 시작 축: 수평</figcaption>
+            </figure>
+            <figure>
+              <div class="mini-grid">
+                <div class="cell" style="left: 6%; top: 8%; width: 22%; height: 28%">1</div>
+                <div class="cell" style="left: 6%; top: 42%; width: 22%; height: 28%">2</div>
+                <div class="cell" style="left: 32%; top: 8%; width: 22%; height: 28%">3</div>
+                <div class="cell" style="left: 32%; top: 42%; width: 22%; height: 28%">4</div>
+              </div>
+              <figcaption>시작 코너: 좌측 상단 · 시작 축: 수직</figcaption>
+            </figure>
+          </div>
+
+          <ul>
+            <li><strong>하단에서 위로 채우기:</strong> 시작 코너를 좌측(또는 우측) <em>하단</em>, 시작 축을 수평으로.</li>
+            <li><strong>오른쪽 세로 벽지를 위에서 아래로:</strong> 시작 코너 우측 상단, 시작 축 수직.</li>
+            <li><strong>자식 정렬</strong>은 “이미지 한 장이 셀 안에서 어디에 붙는지”가 아니라,
+              격자 덩어리가 레이아웃 박스 안 어디에 붙는지입니다. 아래 9칸 패드로도 고를 수 있습니다.</li>
+          </ul>
+          <p>
+            제약(<span class="ui">자동</span> / 열 개수 / 행 개수)으로 한 줄에 몇 칸까지 둘지도 정할 수 있습니다.
+          </p>
+        </section>
+
+        <section class="step" id="cell-size">
+          <span class="step-num">STEP 07</span>
+          <h2>셀 크기 수정</h2>
+          <p>
+            레이아웃 안 각 후원 이미지가 차지하는 칸 크기입니다.
+            기본은 <strong>200×160</strong> px이며, 이미지는 셀에 맞춰 늘어납니다.
+          </p>
+          <ol>
+            <li>수정할 레이아웃을 선택합니다.</li>
+            <li>왼쪽 <span class="ui">셀 크기</span>에서 가로·세로를 바꿉니다.</li>
+            <li>칸 간격은 <span class="ui">스페이싱</span>으로 조절합니다. 음수를 주면 이미지가 겹칩니다.</li>
+            <li>레이아웃 테두리와 격자 사이 여백은 <span class="ui">패딩</span>입니다.</li>
+          </ol>
+          <div class="callout">
+            <p>
+              설정을 바꾸면 격자가 다시 맞춰집니다. 수동으로 다시 맞추고 싶으면
+              <span class="ui">격자</span> 버튼을 누르세요. (캔버스에는 격자가 없어 비활성입니다.)
+            </p>
+          </div>
+        </section>
+
+        <section class="step" id="copy">
+          <span class="step-num">STEP 08</span>
+          <h2>복사 · 붙여넣기 · 복제</h2>
+          <p>같은 띠를 여러 개 만들거나, 이미지·레이아웃을 빠르게 늘릴 때 씁니다.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>동작</th>
+                  <th>단축키</th>
+                  <th>설명</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>복사</td>
+                  <td><span class="kbd">Ctrl</span>+<span class="kbd">C</span></td>
+                  <td>선택한 레이아웃(하위 포함) 또는 이미지</td>
+                </tr>
+                <tr>
+                  <td>붙여넣기</td>
+                  <td><span class="kbd">Ctrl</span>+<span class="kbd">V</span></td>
+                  <td>현재 선택(또는 적절한 부모) 기준으로 붙여넣기</td>
+                </tr>
+                <tr>
+                  <td>복제</td>
+                  <td><span class="kbd">Ctrl</span>+<span class="kbd">D</span></td>
+                  <td>선택 항목을 바로 아래(형제)로 한 장 더 만들기</td>
+                </tr>
+                <tr>
+                  <td>실행 취소</td>
+                  <td><span class="kbd">Ctrl</span>+<span class="kbd">Z</span></td>
+                  <td>직전 편집 되돌리기</td>
+                </tr>
+                <tr>
+                  <td>삭제</td>
+                  <td><span class="kbd">Delete</span></td>
+                  <td>선택 항목 제거</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="step" id="move">
+          <span class="step-num">STEP 09</span>
+          <h2>이미지를 다른 레이아웃으로 옮기기</h2>
+          <p>
+            좌측 벽에 있던 후원을 하단 띠로 옮기는 식으로, 이미지를 레이아웃 간에 재배치할 수 있습니다.
+          </p>
+          <ol>
+            <li>
+              <strong>계층 구조에서:</strong> 이미지 항목을 드래그해 다른 레이아웃(또는 원하는 형제 위치)으로 놓습니다.
+            </li>
+            <li>
+              <strong>미리보기에서:</strong> 계층에서 이미지를 선택한 뒤(여러 장은
+              <span class="kbd">Ctrl</span>+클릭, 같은 부모 아래 연속은 <span class="kbd">Shift</span>+클릭)
+              미리보기의 <strong>목표 레이아웃</strong> 위로 드래그합니다.
+            </li>
+          </ol>
+          <p>
+            옮기면 대상 레이아웃의 격자·시작 코너·축에 맞춰 다시 배치됩니다.
+          </p>
+        </section>
+
+        <section class="step" id="save">
+          <span class="step-num">STEP 10</span>
+          <h2>구조 저장하기 · 불러오기</h2>
+          <p>
+            PNG는 “지금 화면 한 장”이고, <strong>저장</strong>은 레이아웃·배치를 다시 편집할 수 있는
+            프로젝트(JSON)입니다. PC를 바꾸거나 브라우저를 초기화해도 이 파일만 있으면 이어갈 수 있습니다.
+          </p>
+          <ol>
+            <li>
+              왼쪽 위 <span class="ui">저장</span>을 누릅니다.
+              단축키 <span class="kbd">Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">S</span>
+            </li>
+            <li>
+              <span class="ui">이미지 포함</span>이 켜져 있으면 JSON에 이미지도 들어갑니다.
+              (용량이 커지지만 다른 PC에서도 그림까지 그대로 복원됩니다.)
+            </li>
+            <li>
+              다음에 이을 때는 <span class="ui">열기</span>로 그 JSON을 선택합니다.
+              <strong>현재 작업은 덮어씁니다</strong> — 확인 창이 뜹니다.
+            </li>
+          </ol>
+          <div class="callout warn">
+            <p>
+              이미지 없이 저장하면 레이아웃 골격만 남고, 이미지 칸은 복원되지 않습니다.
+              방송용 벽지를 백업할 때는 보통 <span class="ui">이미지 포함</span>을 켠 채로 저장하세요.
+            </p>
+          </div>
+        </section>
+
+        <section class="step" id="checklist">
+          <span class="step-num">마무리</span>
+          <h2>방송 전 체크리스트</h2>
+          <ul>
+            <li>캔버스 크기 = 송출 해상도 (또는 벽지 영역에 맞는 크기)</li>
+            <li>PNG 경로 고정 + OBS 이미지 소스 연결</li>
+            <li>배경 투명 ON (오버레이인 경우)</li>
+            <li>자동 내보내기 ON (실시간으로 파일을 갱신할 때)</li>
+            <li>구조 JSON 백업 한 번 저장</li>
+          </ul>
+          <div class="footer-nav">
+            <a class="btn" href="#start">맨 위로</a>
+            <a class="btn btn-primary" href="index.html">에디터에서 시작하기</a>
+          </div>
+          <p class="page-foot">
+            기능 상세·개념 표는
+            <a href="https://github.com/ainukehere/Grid-Composer/blob/main/README.md">README</a>에도 정리되어 있습니다.
+          </p>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

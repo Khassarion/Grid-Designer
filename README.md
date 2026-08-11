@@ -5,11 +5,14 @@
 
 **사용:** [https://ainukehere.github.io/Grid-Composer](https://ainukehere.github.io/Grid-Composer)
 
+**튜토리얼 (후원 이미지 벽지):** [tutorial.html](tutorial.html) · [배포본](https://ainukehere.github.io/Grid-Composer/tutorial.html)
+
 ---
 
 ## 사용법
 
 위 페이지에서 바로 쓰거나, 저장소의 `index.html`을 브라우저로 열면 됩니다.
+후원 이미지로 OBS 벽지를 만드는 순서는 [튜토리얼](tutorial.html)을 보세요.
 
 앱바에서 **한국어 / English**를 선택할 수 있습니다 (기본: 한국어).
 
@@ -66,6 +69,7 @@
 - **자석**: 레이아웃 이동·크기 조절 시 다른 레이아웃 가장자리·부모 경계·중앙에 스냅 (기본 ON)
 - 휠로 확대/축소, 미리보기 레이아웃에 이미지 드롭으로 추가
 - 계층 구조에 레이아웃과 이미지가 함께 표시됩니다 (형제 간 드래그로 순서 변경)
+- 이미지는 `Ctrl+클릭`으로 다중 선택, `Shift+클릭`으로 같은 부모 아래 연속 선택 후 미리보기로 드래그해 일괄 이동
 - 레이아웃 이름 더블클릭으로 이름 변경
 - 계층 구조 **추가** 메뉴: 이미지 추가 · 레이아웃 추가
 - 선택 항목이 없으면 **제거** 비활성화
@@ -77,7 +81,7 @@
 ### 구조 저장·불러오기
 
 - **저장** — 캔버스·레이아웃·배치를 JSON으로 다운로드
-- **이미지 포함** 체크 시 이미지도 JSON에 함께 저장 (기본 해제)
+- **이미지 포함** 체크 시 이미지도 JSON에 함께 저장 (기본 체크)
 - **열기** — JSON으로 복원 (다른 브라우저·PC에서도 동일). 기존 작업은 덮어씀
 - 이미지 없이 저장하면 레이아웃 구조만 남고, 이미지 슬롯은 저장되지 않습니다
 
@@ -103,10 +107,11 @@
 
 ```
 index.html
+tutorial.html / tutorial.css   # 사용자 튜토리얼
 styles.css
-.nojekyll                # GitHub Pages용
-js/grid.js               # 격자 계산
-js/app.js                # 편집기
+.nojekyll                      # GitHub Pages용
+js/grid.js                     # 격자 계산
+js/app.js                      # 편집기
 ```
 
 ---
