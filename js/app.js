@@ -1352,11 +1352,19 @@
     });
   }
 
-  function savePng(blob) {
+  // Serialize all PNG writes — overlapping createWritable() on the same handle
+  // fails, and the old catch path re-opened the save dialog (esp. on rapid
+  // spacing/padding input → debounced auto-export).
+  var pngWriteChain = Promise.resolve();
+
+  function savePng(blob, opts) {
+    opts = opts || {};
+    var allowPick = opts.allowPick !== false;
     function hint() {
       el.paths.innerHTML = t("pngLine") + "<strong>" + (pngHandle ? pngHandle.name : t("notSelected")) + "</strong>";
     }
     if (typeof window.showSaveFilePicker !== "function") {
+      if (!allowPick) return Promise.reject(new Error(t("errNoPathPicker")));
       var a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = "obs-grid.png";
@@ -1367,9 +1375,14 @@
     function ensurePermission(handle) {
       return handle.queryPermission({ mode: "readwrite" }).then(function (st) {
         if (st === "granted") return true;
+        // requestPermission needs a user gesture — debounced auto-export has none.
         return handle.requestPermission({ mode: "readwrite" }).then(function (n) {
           return n === "granted";
+        }).catch(function () {
+          return false;
         });
+      }).catch(function () {
+        return false;
       });
     }
     function writeBlob(handle) {
@@ -1392,12 +1405,22 @@
     function write(handle) {
       return writeBlob(handle).then(function () { return remember(handle); });
     }
-    if (!pngHandle) return pickPng().then(write);
-    return write(pngHandle).catch(function (e) {
-      if (e && e.name === "AbortError") throw e;
-      // Permission lost / handle stale → ask for a path again
-      return pickPng().then(write);
-    });
+    function run() {
+      if (!pngHandle) {
+        if (!allowPick) throw new Error(t("errWritePermission"));
+        return pickPng().then(write);
+      }
+      return write(pngHandle).catch(function (e) {
+        if (e && e.name === "AbortError") throw e;
+        // Manual export only: permission lost / handle stale → ask again.
+        // Auto-export must never open a picker (would interrupt typing/editing).
+        if (!allowPick) throw e;
+        return pickPng().then(write);
+      });
+    }
+    var task = pngWriteChain.then(run, run);
+    pngWriteChain = task.then(function () {}, function () {});
+    return task;
   }
 
   function exportPng() {
@@ -1463,7 +1486,7 @@
         status(t("autoExportFail"), "err");
         return;
       }
-      savePng(blob).then(function (name) {
+      savePng(blob, { allowPick: false }).then(function (name) {
         if (name) status(t("autoExportOk", { name: name }), "ok");
       }).catch(function (e) {
         if (e && e.name !== "AbortError") status(String(e.message || e), "err");
