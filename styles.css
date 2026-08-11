@@ -85,9 +85,9 @@ body {
 }
 
 .app-tutorial-link {
-  margin-right: 4px;
+  margin-right: 2px;
   padding: 0.22rem 0.45rem;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 5px;
   color: var(--muted);
   font-size: 0.78rem;
@@ -98,7 +98,8 @@ body {
 
 .app-tutorial-link:hover {
   color: var(--text);
-  border-color: var(--accent);
+  border-color: var(--border);
+  background: var(--panel-2);
   text-decoration: none;
 }
 

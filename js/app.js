@@ -1423,8 +1423,13 @@
     return !!(cb && cb.checked);
   }
 
+  function canAutoExport() {
+    // Require a fixed PNG path — never open a file picker from auto-export.
+    return isAutoExportOn() && !!canvasId && !!pngHandle;
+  }
+
   function requestAutoExport(immediate) {
-    if (!isAutoExportOn() || !canvasId) return;
+    if (!canAutoExport()) return;
     if (drag) return; // resize/move in progress — wait until mouseup
     clearTimeout(autoExportTimer);
     autoExportTimer = null;
@@ -1439,7 +1444,7 @@
   }
 
   function runAutoExport() {
-    if (!isAutoExportOn() || !canvasId) return;
+    if (!canAutoExport()) return;
     if (autoExportBusy) {
       autoExportPending = true;
       return;

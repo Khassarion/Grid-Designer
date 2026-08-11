@@ -15,7 +15,6 @@
     <header class="app-bar">
       <div class="app-bar-left">
         <span class="app-brand">Grid Composer</span>
-        <a class="app-tutorial-link" href="tutorial.html" data-i18n="tutorial" data-i18n-title="tutorialTitle">튜토리얼</a>
         <div class="app-bar-group" data-i18n-title="projectGroupTitle">
           <label class="file-pick-label" for="projectInput" data-i18n="open">열기</label>
           <input id="projectInput" class="file-input" type="file" accept="application/json,.json" />
@@ -31,6 +30,7 @@
         <p id="savePaths" class="hint app-bar-path"></p>
       </div>
       <div class="app-bar-right">
+        <a class="app-tutorial-link" href="tutorial.html" data-i18n="tutorial" data-i18n-title="tutorialTitle">튜토리얼</a>
         <label class="lang-select-wrap" data-i18n-title="langTitle">
           <select id="langSelect" aria-label="Language">
             <option value="ko">한국어</option>
@@ -38,7 +38,7 @@
           </select>
         </label>
         <label class="checkbox-row compact" for="autoExportPng" data-i18n-title="autoExportTitle">
-          <input id="autoExportPng" type="checkbox" />
+          <input id="autoExportPng" type="checkbox" checked />
           <span data-i18n="autoExport">자동 내보내기</span>
         </label>
         <button id="changePngPathBtn" type="button" data-i18n="changePath" data-i18n-title="changePathTitle">위치 변경</button>
