@@ -73,7 +73,7 @@
 
   var FOLDER_WATCH_LS = "grid-composer-folder-watch";
   var FOLDER_SEEN_LS = "grid-composer-folder-seen";
-  var FOLDER_POLL_MS = 3000;
+  var FOLDER_POLL_MS = 1000;
   var folderHandle = null;
   var folderWatch = {
     enabled: false,
@@ -1475,7 +1475,7 @@
     folderScanDebounce = setTimeout(function () {
       folderScanDebounce = null;
       scanWatchFolder();
-    }, 500);
+    }, 200);
   }
 
   function ensureFolderReadPermission(handle, allowRequest) {
@@ -2659,13 +2659,13 @@
   }
 
   function copySelection() {
-    var t = getCopyTarget();
-    if (!t) {
+    var target = getCopyTarget();
+    if (!target) {
       status(t("errCopySelect"), "err");
       return;
     }
-    if (t.kind === "image") {
-      var ch = layouts[t.parentId].children[t.index];
+    if (target.kind === "image") {
+      var ch = layouts[target.parentId].children[target.index];
       if (!ch || !images[ch.refId]) {
         status(t("errCopyImage"), "err");
         return;
@@ -2681,12 +2681,12 @@
       status(t("imageCopied"), "ok");
       return;
     }
-    if (!layouts[t.id]) {
+    if (!layouts[target.id]) {
       status(t("errCopyLayout"), "err");
       return;
     }
-    var sub = cloneLayoutSubtree(t.id);
-    var pf = findParentFrame(t.id);
+    var sub = cloneLayoutSubtree(target.id);
+    var pf = findParentFrame(target.id);
     clip = {
       kind: "layout",
       rootId: sub.rootId,
@@ -2807,16 +2807,16 @@
   }
 
   function duplicateSelection() {
-    var t = getCopyTarget();
-    if (!t) {
+    var target = getCopyTarget();
+    if (!target) {
       status(t("errDupSelect"), "err");
       return;
     }
     pushUndo();
 
-    if (t.kind === "image") {
-      var parent = layouts[t.parentId];
-      var ch = parent && parent.children[t.index];
+    if (target.kind === "image") {
+      var parent = layouts[target.parentId];
+      var ch = parent && parent.children[target.index];
       if (!parent || !ch || !images[ch.refId]) {
         if (undoStack.length) undoStack.pop();
         status(t("errDupImage"), "err");
@@ -2834,19 +2834,20 @@
           z: maxZ,
         };
       }
-      parent.children.splice(t.index + 1, 0, {
+      parent.children.splice(target.index + 1, 0, {
         type: "image",
         refId: ch.refId,
         frame: frame,
       });
       if (!isCanvas(parent.id)) reflow(parent);
-      selectChildNode(parent.id, t.index + 1);
+      selectChildNode(parent.id, target.index + 1);
+      refresh();
       status(t("imageDuplicated"), "ok");
       requestAutoExport(true);
       return;
     }
 
-    var srcLay = layouts[t.id];
+    var srcLay = layouts[target.id];
     var parentId = srcLay && srcLay.parentId;
     var parent = parentId && layouts[parentId];
     if (!srcLay || !parent) {
@@ -2856,7 +2857,7 @@
     }
     var idx = -1;
     for (var i = 0; i < parent.children.length; i++) {
-      if (parent.children[i].type === "layout" && parent.children[i].refId === t.id) {
+      if (parent.children[i].type === "layout" && parent.children[i].refId === target.id) {
         idx = i;
         break;
       }
@@ -2867,12 +2868,12 @@
       return;
     }
 
-    var sub = cloneLayoutSubtree(t.id);
+    var sub = cloneLayoutSubtree(target.id);
     var newRoot = instantiateClipLayouts(sub.rootId, sub.layouts, parentId);
     var rootLay = layouts[newRoot];
     var childEntry;
     if (isCanvas(parentId)) {
-      var pf = parent.children[idx].frame || findParentFrame(t.id);
+      var pf = parent.children[idx].frame || findParentFrame(target.id);
       maxZ += 1;
       childEntry = {
         type: "layout",
@@ -2894,6 +2895,7 @@
     parent.children.splice(idx + 1, 0, childEntry);
     if (!isCanvas(parentId)) reflow(parent);
     selectLayout(newRoot);
+    refresh();
     status(t("layoutDuplicated"), "ok");
     requestAutoExport(true);
   }
