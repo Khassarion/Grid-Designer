@@ -119,20 +119,17 @@
     startCorner: $("startCorner"),
     startAxis: $("startAxis"),
     childAlign: $("childAlign"),
-    alignPad: $("alignPad"),
     constraint: $("constraint"),
     constraintCount: $("constraintCount"),
     constraintCountRow: $("constraintCountRow"),
-    clearBg: $("transparentBg"),
     bg: $("bgColor"),
-    bgRow: $("bgColorRow"),
+    bgAlpha: $("bgAlpha"),
     status: $("status"),
     paths: $("savePaths"),
     stage: $("previewStage"),
     shell: $("previewShell"),
     wrap: $("previewWrap"),
     meta: $("previewMeta"),
-    badge: $("canvasSizeBadge"),
     zoomLabel: $("zoomLabel"),
     canvas: $("exportCanvas"),
     file: $("fileInput"),
@@ -173,6 +170,58 @@
     }, extra || {}));
   }
 
+  function clamp01(n) {
+    n = +n;
+    if (!(n >= 0)) return 0;
+    if (n > 1) return 1;
+    return n;
+  }
+
+  function hexToRgb(hex) {
+    var h = String(hex || "#000000").replace("#", "");
+    if (h.length === 3) {
+      h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    }
+    if (h.length !== 6) return { r: 0, g: 0, b: 0 };
+    return {
+      r: parseInt(h.slice(0, 2), 16) || 0,
+      g: parseInt(h.slice(2, 4), 16) || 0,
+      b: parseInt(h.slice(4, 6), 16) || 0,
+    };
+  }
+
+  /** 0–1 alpha; legacy transparentBg maps to 0 / 1 when bgAlpha missing */
+  function getBgAlpha(L) {
+    if (!L) return 0;
+    if (L.bgAlpha != null && L.bgAlpha !== "") return clamp01(L.bgAlpha);
+    return L.transparentBg === false ? 1 : 0;
+  }
+
+  function layoutBgCss(L) {
+    var a = getBgAlpha(L);
+    if (a <= 0) return "transparent";
+    var rgb = hexToRgb(L.bgColor || "#000000");
+    if (a >= 1) return L.bgColor || "#000000";
+    return "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + "," + a + ")";
+  }
+
+  function layoutBgFillStyle(L) {
+    var a = getBgAlpha(L);
+    if (a <= 0) return null;
+    var rgb = hexToRgb(L.bgColor || "#000000");
+    if (a >= 1) return L.bgColor || "#000000";
+    return "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + "," + a + ")";
+  }
+
+  function copyBgFields(L) {
+    var a = getBgAlpha(L);
+    return {
+      bgColor: L.bgColor || "#000000",
+      bgAlpha: a,
+      transparentBg: a <= 0,
+    };
+  }
+
   function makeLayout(name, parentId) {
     var id = uid("lay");
     layouts[id] = {
@@ -182,6 +231,7 @@
       settings: defaultSettings(),
       transparentBg: true,
       bgColor: "#000000",
+      bgAlpha: 0,
       children: [],
     };
     return id;
@@ -527,12 +577,7 @@
       el.snapBtn.title = snapEnabled ? t("snapOn") : t("snapOff");
     }
     var fixed = !isC && el.constraint.value !== "auto";
-    el.constraintCountRow.hidden = !fixed;
-    var c = canvasSize();
-    el.badge.textContent = t("badgeCanvas", { w: c.w, h: c.h });
-    el.alignPad.querySelectorAll("button").forEach(function (b) {
-      b.classList.toggle("active", b.dataset.align === el.childAlign.value);
-    });
+    el.constraintCount.disabled = !fixed;
     var sizeEl = $("canvasImageSize");
     if (sizeEl) {
       if (imgFr) {
@@ -562,7 +607,6 @@
       width: Math.max(1, +el.canvasW.value || 1),
       height: Math.max(1, +el.canvasH.value || 1),
     }));
-    el.badge.textContent = t("badgeCanvas", { w: L.settings.width, h: L.settings.height });
   }
 
   function readForm() {
@@ -589,10 +633,8 @@
     el.childAlign.value = s.child_align;
     el.constraint.value = s.constraint;
     el.constraintCount.value = s.constraint_count;
-    el.clearBg.checked = L.transparentBg !== false;
     el.bg.value = L.bgColor || "#000000";
-    el.bg.disabled = el.clearBg.checked;
-    el.bgRow.style.opacity = el.clearBg.checked ? "0.5" : "1";
+    el.bgAlpha.value = String(Math.round(getBgAlpha(L) * 100));
     syncChrome();
   }
 
@@ -603,8 +645,9 @@
       syncChrome();
       return;
     }
-    L.transparentBg = el.clearBg.checked;
-    L.bgColor = el.bg.value;
+    L.bgColor = el.bg.value || "#000000";
+    L.bgAlpha = clamp01((+el.bgAlpha.value || 0) / 100);
+    L.transparentBg = L.bgAlpha <= 0;
 
     var locked = isSizeLocked(L.id);
     var cur = ns(L.settings);
@@ -1018,7 +1061,7 @@
     container.dataset.layoutId = layoutId;
     container.style.width = s.width + "px";
     container.style.height = s.height + "px";
-    container.style.background = L.transparentBg !== false ? "transparent" : (L.bgColor || "#000");
+    container.style.background = layoutBgCss(L);
     container.replaceChildren();
 
     childPaintOrder(L).forEach(function (i) {
@@ -1089,8 +1132,9 @@
     if (!L || depth > 20) return;
     ensureFrames(L);
     var s = ns(L.settings);
-    if (L.transparentBg === false) {
-      ctx.fillStyle = L.bgColor || "#000";
+    var fill = layoutBgFillStyle(L);
+    if (fill) {
+      ctx.fillStyle = fill;
       ctx.fillRect(ox, oy, s.width, s.height);
     }
     childPaintOrder(L).forEach(function (i) {
@@ -1917,13 +1961,11 @@
     var out = {};
     Object.keys(src).forEach(function (id) {
       var L = src[id];
-      out[id] = {
+      out[id] = Object.assign({
         id: L.id,
         name: L.name,
         parentId: L.parentId,
         settings: Object.assign({}, L.settings),
-        transparentBg: L.transparentBg !== false,
-        bgColor: L.bgColor || "#000000",
         children: (L.children || []).map(function (ch) {
           return {
             type: ch.type,
@@ -1931,7 +1973,7 @@
             frame: ch.frame ? Object.assign({}, ch.frame) : null,
           };
         }),
-      };
+      }, copyBgFields(L));
     });
     return out;
   }
@@ -2308,7 +2350,7 @@
   // Click outside the canvas (black preview area) → same as empty canvas click
   el.wrap.addEventListener("mousedown", function (e) {
     if (e.button) return;
-    if (e.target !== el.wrap && e.target !== el.shell && e.target !== el.badge) return;
+    if (e.target !== el.wrap && e.target !== el.shell) return;
     selectCanvasFromEmpty();
   });
 
@@ -2401,22 +2443,6 @@
 
   // wire
   fillAlign(el.childAlign);
-  ALIGNS.forEach(function (k) {
-    var b = document.createElement("button");
-    b.type = "button";
-    b.dataset.align = k;
-    b.title = alignLabel(k);
-    b.onclick = function () {
-      if (isCanvas(activeId)) return;
-      pushUndo();
-      el.childAlign.value = k;
-      writeForm();
-      reflow(lay());
-      refresh();
-      requestAutoExport(true);
-    };
-    el.alignPad.appendChild(b);
-  });
 
   $("addChildLayoutBtn").onclick = function () {
     closeAddMenu();
@@ -2581,13 +2607,11 @@
     order.forEach(function (oldId) {
       var L = layouts[oldId];
       var newId = idMap[oldId];
-      out[newId] = {
+      out[newId] = Object.assign({
         id: newId,
         name: oldId === rootId ? (L.name + t("copySuffix")) : L.name,
         parentId: oldId === rootId ? null : idMap[L.parentId],
         settings: Object.assign({}, L.settings),
-        transparentBg: L.transparentBg !== false,
-        bgColor: L.bgColor || "#000000",
         children: (L.children || []).map(function (ch) {
           if (ch.type === "layout") {
             return {
@@ -2602,7 +2626,7 @@
             frame: ch.frame ? Object.assign({}, ch.frame) : null,
           };
         }),
-      };
+      }, copyBgFields(L));
     });
     return { rootId: idMap[rootId], layouts: out };
   }
@@ -2659,13 +2683,11 @@
     Object.keys(srcLayouts).forEach(function (srcId) {
       var src = srcLayouts[srcId];
       var nid = idMap[srcId];
-      layouts[nid] = {
+      layouts[nid] = Object.assign({
         id: nid,
         name: src.name,
         parentId: srcId === srcRootId ? parentId : idMap[src.parentId],
         settings: Object.assign({}, src.settings),
-        transparentBg: src.transparentBg !== false,
-        bgColor: src.bgColor || "#000000",
         children: (src.children || []).map(function (ch) {
           if (ch.type === "layout") {
             return {
@@ -2680,7 +2702,7 @@
             frame: ch.frame ? Object.assign({}, ch.frame) : null,
           };
         }),
-      };
+      }, copyBgFields(src));
     });
     return newRoot;
   }
@@ -2898,7 +2920,7 @@
     el.cellW, el.cellH, el.spacingX, el.spacingY,
     el.startCorner, el.startAxis, el.childAlign,
     el.constraint, el.constraintCount,
-    el.w, el.h, el.canvasW, el.canvasH, el.clearBg, el.bg,
+    el.w, el.h, el.canvasW, el.canvasH, el.bg, el.bgAlpha,
   ];
   formKeys.forEach(function (node) {
     if (!node) return;
@@ -2950,20 +2972,22 @@
     inp.addEventListener("change", onCanvasSizeChange);
   });
 
-  el.clearBg.onchange = function () {
-    if (isCanvas(activeId)) return;
-    el.bg.disabled = el.clearBg.checked;
-    el.bgRow.style.opacity = el.clearBg.checked ? "0.5" : "1";
-    writeForm();
-    refreshPreview();
-    requestAutoExport(true);
-  };
-  el.bg.oninput = function () {
+  function onBgChange() {
     if (isCanvas(activeId)) return;
     writeForm();
     refreshPreview();
     requestAutoExport(false);
-  };
+  }
+  el.bg.addEventListener("input", onBgChange);
+  el.bg.addEventListener("change", function () {
+    onBgChange();
+    requestAutoExport(true);
+  });
+  el.bgAlpha.addEventListener("input", onBgChange);
+  el.bgAlpha.addEventListener("change", function () {
+    onBgChange();
+    requestAutoExport(true);
+  });
 
   if (el.snapBtn) {
     el.snapBtn.onclick = function () {
@@ -3090,10 +3114,6 @@
     var cur = el.childAlign.value;
     fillAlign(el.childAlign);
     if (cur) el.childAlign.value = cur;
-    el.alignPad.querySelectorAll("button").forEach(function (b) {
-      b.title = alignLabel(b.dataset.align);
-      b.classList.toggle("active", b.dataset.align === el.childAlign.value);
-    });
   }
 
   function applyLanguageUi() {

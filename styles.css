@@ -277,19 +277,10 @@ button.danger {
   gap: 6px;
 }
 
-.inline-bg {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.bg-color-inline input[type="color"] {
-  width: 36px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--border);
-  background: transparent;
+.form-row input:disabled,
+.form-row select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 h1,
@@ -297,6 +288,47 @@ h2 {
   margin: 0;
   font-size: 0.9rem;
   font-weight: 650;
+}
+
+h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+}
+
+.hint-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.1em;
+  height: 1.1em;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78em;
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1;
+  cursor: help;
+  user-select: none;
+}
+
+.hint-tip:hover,
+.hint-tip:focus {
+  color: var(--accent);
+  outline: none;
+}
+
+.form-row > label.label-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  flex: 0 0 auto;
+  max-width: none;
 }
 
 .hint,
@@ -310,7 +342,7 @@ h2 {
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 5px;
+  gap: 4px 6px;
 }
 
 .form-grid.cols-4 {
@@ -318,28 +350,46 @@ h2 {
 }
 
 .form-grid.cols-4 input {
-  padding-left: 0.25rem;
-  padding-right: 0.25rem;
+  padding-left: 0.2rem;
+  padding-right: 0.2rem;
 }
 
 .form-row {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .form-row.full {
   grid-column: 1 / -1;
 }
 
-.form-row label {
+.form-row > label {
+  flex: 0 0 4.75rem;
   font-size: 0.7rem;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
-.form-row input,
-.form-row select {
-  width: 100%;
+.form-grid.cols-4 .form-row {
+  gap: 3px;
+}
+
+.form-grid.cols-4 .form-row > label {
+  flex: 0 0 1em;
+  text-align: center;
+}
+
+.form-row > input,
+.form-row > select {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
   padding: 0.25rem 0.35rem;
   border-radius: 5px;
   border: 1px solid var(--border);
@@ -347,9 +397,10 @@ h2 {
   color: var(--text);
 }
 
-.form-row input[type="color"] {
+.form-row > input[type="color"] {
   padding: 0.1rem;
   height: 26px;
+  max-width: 100%;
 }
 
 .checkbox-row {
@@ -682,78 +733,6 @@ h2 {
   border-color: var(--accent);
 }
 
-.align-pad {
-  display: grid;
-  grid-template-columns: repeat(3, 28px);
-  grid-template-rows: repeat(3, 28px);
-  gap: 3px;
-  width: fit-content;
-  margin: 2px 0 4px;
-}
-
-.align-pad button {
-  padding: 0;
-  width: 28px;
-  height: 28px;
-  font-size: 0;
-  position: relative;
-}
-
-.align-pad button::after {
-  content: "";
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  border-radius: 1px;
-  background: var(--muted);
-}
-
-.align-pad button[data-align="left-top"]::after {
-  left: 4px;
-  top: 4px;
-}
-.align-pad button[data-align="center-top"]::after {
-  left: 11px;
-  top: 4px;
-}
-.align-pad button[data-align="right-top"]::after {
-  right: 4px;
-  top: 4px;
-}
-.align-pad button[data-align="left-middle"]::after {
-  left: 4px;
-  top: 11px;
-}
-.align-pad button[data-align="center-middle"]::after {
-  left: 11px;
-  top: 11px;
-}
-.align-pad button[data-align="right-middle"]::after {
-  right: 4px;
-  top: 11px;
-}
-.align-pad button[data-align="left-bottom"]::after {
-  left: 4px;
-  bottom: 4px;
-}
-.align-pad button[data-align="center-bottom"]::after {
-  left: 11px;
-  bottom: 4px;
-}
-.align-pad button[data-align="right-bottom"]::after {
-  right: 4px;
-  bottom: 4px;
-}
-
-.align-pad button.active {
-  border-color: var(--accent);
-  background: #1a2a40;
-}
-
-.align-pad button.active::after {
-  background: var(--accent);
-}
-
 .preview-head {
   display: flex;
   justify-content: space-between;
@@ -862,23 +841,6 @@ h2 {
   position: relative;
   margin: 0;
   /* Paint-style: pin canvas to top-left of the scroll area */
-}
-
-.canvas-size-badge {
-  position: absolute;
-  left: 8px;
-  top: 8px;
-  z-index: 30;
-  pointer-events: none;
-  padding: 4px 8px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 4px;
-  white-space: nowrap;
 }
 
 .preset-size {
