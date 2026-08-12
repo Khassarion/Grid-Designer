@@ -57,15 +57,15 @@
             <div class="menu-drop" id="addMenu">
               <button id="addMenuBtn" class="primary" type="button" aria-haspopup="true" aria-expanded="false" data-i18n="addMenu">추가 ▾</button>
               <div class="menu-drop-panel" id="addMenuPanel" hidden>
-                <label class="menu-drop-item" for="fileInput" data-i18n="addImage">이미지 추가</label>
+                <button id="addImageMenuBtn" class="menu-drop-item" type="button" data-i18n="addImage">이미지 추가</button>
                 <button id="addChildLayoutBtn" class="menu-drop-item" type="button" data-i18n="addLayout">레이아웃 추가</button>
                 <button id="folderWatchMenuBtn" class="menu-drop-item" type="button" data-i18n="folderWatch" data-i18n-title="folderWatchTitle">자동 설정</button>
               </div>
             </div>
-            <input id="fileInput" class="file-input" type="file" accept="image/*" multiple />
             <button id="removeNodeBtn" class="danger" type="button" data-i18n="remove" data-i18n-title="removeTitle">제거</button>
             <button id="clearChildrenBtn" class="danger" type="button" data-i18n="clearAll" data-i18n-title="clearAllTitle">전체</button>
           </div>
+          <input id="fileInput" class="file-input" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" />
           <ul id="layoutTree" class="tree-list"></ul>
         </div>
 
@@ -168,6 +168,9 @@
                     <span class="hint-tip" tabindex="0" data-i18n-title="childAlignHint" title="셀 그룹이 레이아웃 안 어디에 붙는지">ⓘ</span>
                   </label>
                   <select id="childAlign"></select>
+                </div>
+                <div class="form-row full align-pad-row">
+                  <div id="alignPad" class="align-pad" data-i18n-title="childAlign"></div>
                 </div>
               </div>
 

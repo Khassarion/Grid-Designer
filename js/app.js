@@ -119,6 +119,7 @@
     startCorner: $("startCorner"),
     startAxis: $("startAxis"),
     childAlign: $("childAlign"),
+    alignPad: $("alignPad"),
     constraint: $("constraint"),
     constraintCount: $("constraintCount"),
     constraintCountRow: $("constraintCountRow"),
@@ -578,6 +579,11 @@
     }
     var fixed = !isC && el.constraint.value !== "auto";
     el.constraintCount.disabled = !fixed;
+    if (el.alignPad) {
+    el.alignPad.querySelectorAll("button").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.align === el.childAlign.value);
+    });
+    }
     var sizeEl = $("canvasImageSize");
     if (sizeEl) {
       if (imgFr) {
@@ -875,10 +881,10 @@
       e.preventDefault();
       li.classList.add("drag-over");
     };
-    li.ondragleave = function () { li.classList.remove("drag-over"); };
-    li.ondrop = function (e) {
-      e.preventDefault();
-      li.classList.remove("drag-over");
+      li.ondragleave = function () { li.classList.remove("drag-over"); };
+      li.ondrop = function (e) {
+        e.preventDefault();
+        li.classList.remove("drag-over");
       if (!childDrag || childDrag.parentId !== parentId || childDrag.index === index) return;
       var parent = layouts[parentId];
       if (!parent) return;
@@ -893,7 +899,7 @@
         if (previewSel.parentId === parentId) previewSel = { parentId: parentId, index: index };
       }
       if (!isCanvas(parentId)) reflow(parent);
-      refresh();
+        refresh();
       requestAutoExport(true);
     };
   }
@@ -1085,12 +1091,12 @@
           cell.classList.add("selected-nested-image");
         }
         if (interactive && primary) {
-          ["nw", "n", "ne", "e", "se", "s", "sw", "w"].forEach(function (h) {
-            var d = document.createElement("div");
-            d.className = "resize-handle " + h;
-            d.dataset.handle = h;
-            cell.appendChild(d);
-          });
+        ["nw", "n", "ne", "e", "se", "s", "sw", "w"].forEach(function (h) {
+          var d = document.createElement("div");
+          d.className = "resize-handle " + h;
+          d.dataset.handle = h;
+          cell.appendChild(d);
+        });
         }
       }
       if (ch.type === "image" && images[ch.refId] && images[ch.refId].img) {
@@ -1117,10 +1123,10 @@
           sizeLab.textContent = Math.round(f.w) + "×" + Math.round(f.h);
           cell.appendChild(sizeLab);
         } else {
-          var lab = document.createElement("span");
-          lab.className = "grid-cell-label";
-          lab.textContent = String(i + 1) + (ch.type === "layout" ? " #" : "");
-          cell.appendChild(lab);
+        var lab = document.createElement("span");
+        lab.className = "grid-cell-label";
+        lab.textContent = String(i + 1) + (ch.type === "layout" ? " #" : "");
+        cell.appendChild(lab);
         }
       }
       container.appendChild(cell);
@@ -1737,7 +1743,7 @@
           clearDropHighlight();
         }
       } else {
-        node.classList.add("dragover");
+      node.classList.add("dragover");
       }
     });
     node.addEventListener("dragleave", function (e) {
@@ -1848,13 +1854,13 @@
       });
     }
     function remember(handle) {
-      pngHandle = handle;
-      hint();
+        pngHandle = handle;
+          hint();
       // Persist handle for next visit — failure must not look like a save failure
       // (old code re-opened the file picker after a successful write).
       return idb("put", "png", handle).catch(function () { return null; }).then(function () {
-        return handle.name;
-      });
+          return handle.name;
+        });
     }
     function write(handle) {
       return writeBlob(handle).then(function () { return remember(handle); });
@@ -2131,15 +2137,15 @@
     var chain = Promise.resolve();
     if (includeImages) {
       var ids = collectUsedImageIds(canvasId);
-      ids.forEach(function (id) {
-        chain = chain.then(function () {
-          var entry = images[id];
-          if (!entry) return;
-          return imageToDataUrl(entry).then(function (dataUrl) {
-            imagePayload[id] = { id: id, name: entry.name || id, dataUrl: dataUrl };
-          });
+    ids.forEach(function (id) {
+      chain = chain.then(function () {
+        var entry = images[id];
+        if (!entry) return;
+        return imageToDataUrl(entry).then(function (dataUrl) {
+          imagePayload[id] = { id: id, name: entry.name || id, dataUrl: dataUrl };
         });
       });
+    });
     }
     return chain.then(function () {
       var layoutPayload = cloneLayoutsMap(layouts);
@@ -2425,8 +2431,8 @@
     if (!drag) return;
     var finished = drag;
     drag = null;
-    var PL = layouts[finished.layoutId];
-    var pch = PL && PL.children[finished.index];
+      var PL = layouts[finished.layoutId];
+      var pch = PL && PL.children[finished.index];
     var fr = pch && pch.frame;
     var o = finished.orig;
     var changed = !!(fr && o && (
@@ -2443,6 +2449,24 @@
 
   // wire
   fillAlign(el.childAlign);
+  if (el.alignPad) {
+  ALIGNS.forEach(function (k) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.dataset.align = k;
+      b.title = alignLabel(k);
+    b.onclick = function () {
+      if (isCanvas(activeId)) return;
+        pushUndo();
+      el.childAlign.value = k;
+      writeForm();
+      reflow(lay());
+      refresh();
+        requestAutoExport(true);
+    };
+    el.alignPad.appendChild(b);
+  });
+  }
 
   $("addChildLayoutBtn").onclick = function () {
     closeAddMenu();
@@ -2493,8 +2517,11 @@
       setAddMenuOpen(!!(panel && panel.hidden));
     };
   }
-  if ($("fileInput")) {
-    $("fileInput").addEventListener("click", closeAddMenu);
+  if ($("addImageMenuBtn")) {
+    $("addImageMenuBtn").onclick = function () {
+      closeAddMenu();
+      if (el.file) el.file.click();
+    };
   }
   document.addEventListener("mousedown", function (e) {
     var menu = $("addMenu");
@@ -2555,12 +2582,12 @@
         requestAutoExport(true);
         return true;
       }
-      L.children.splice(selectedChild, 1);
-      selectedChild = -1;
-      previewSel = { parentId: null, index: -1 };
+    L.children.splice(selectedChild, 1);
+    selectedChild = -1;
+    previewSel = { parentId: null, index: -1 };
       clearImageSel();
-      if (!isCanvas(L.id)) reflow(L);
-      refresh();
+    if (!isCanvas(L.id)) reflow(L);
+    refresh();
       status(t("imageRemoved"), "ok");
       requestAutoExport(true);
       return true;
@@ -3114,6 +3141,12 @@
     var cur = el.childAlign.value;
     fillAlign(el.childAlign);
     if (cur) el.childAlign.value = cur;
+    if (el.alignPad) {
+      el.alignPad.querySelectorAll("button").forEach(function (b) {
+        b.title = alignLabel(b.dataset.align);
+        b.classList.toggle("active", b.dataset.align === el.childAlign.value);
+      });
+    }
   }
 
   function applyLanguageUi() {

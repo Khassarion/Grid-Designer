@@ -323,14 +323,6 @@ h2 {
   outline: none;
 }
 
-.form-row > label.label-with-tip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3em;
-  flex: 0 0 auto;
-  max-width: none;
-}
-
 .hint,
 .muted {
   margin: 0;
@@ -376,6 +368,19 @@ h2 {
   line-height: 1.2;
 }
 
+.form-row > label.label-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  overflow: visible;
+}
+
+.form-row > label.label-with-tip > span[data-i18n] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .form-grid.cols-4 .form-row {
   gap: 3px;
 }
@@ -389,12 +394,15 @@ h2 {
 .form-row > select {
   flex: 1 1 0;
   min-width: 0;
-  width: auto;
+  width: 100%;
+  box-sizing: border-box;
   padding: 0.25rem 0.35rem;
   border-radius: 5px;
   border: 1px solid var(--border);
   background: #0f1116;
   color: var(--text);
+  font: inherit;
+  line-height: 1.3;
 }
 
 .form-row > input[type="color"] {
@@ -459,10 +467,14 @@ h2 {
   position: absolute;
   width: 1px;
   height: 1px;
+  padding: 0;
   margin: -1px;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
   border: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .file-pick-label {
@@ -501,6 +513,10 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.menu-drop-panel[hidden] {
+  display: none !important;
 }
 
 .menu-drop-item {
@@ -731,6 +747,84 @@ h2 {
 
 .tree-item.drag-over {
   border-color: var(--accent);
+}
+
+.align-pad-row {
+  justify-content: flex-start;
+  padding-left: 4.75rem;
+}
+
+.align-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 22px);
+  grid-template-rows: repeat(3, 22px);
+  gap: 2px;
+  width: fit-content;
+  margin: 0;
+}
+
+.align-pad button {
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  min-width: 0;
+  font-size: 0;
+  position: relative;
+}
+
+.align-pad button::after {
+  content: "";
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--muted);
+}
+
+.align-pad button[data-align="left-top"]::after {
+  left: 3px;
+  top: 3px;
+}
+.align-pad button[data-align="center-top"]::after {
+  left: 8px;
+  top: 3px;
+}
+.align-pad button[data-align="right-top"]::after {
+  right: 3px;
+  top: 3px;
+}
+.align-pad button[data-align="left-middle"]::after {
+  left: 3px;
+  top: 8px;
+}
+.align-pad button[data-align="center-middle"]::after {
+  left: 8px;
+  top: 8px;
+}
+.align-pad button[data-align="right-middle"]::after {
+  right: 3px;
+  top: 8px;
+}
+.align-pad button[data-align="left-bottom"]::after {
+  left: 3px;
+  bottom: 3px;
+}
+.align-pad button[data-align="center-bottom"]::after {
+  left: 8px;
+  bottom: 3px;
+}
+.align-pad button[data-align="right-bottom"]::after {
+  right: 3px;
+  bottom: 3px;
+}
+
+.align-pad button.active {
+  border-color: var(--accent);
+  background: #1a2a40;
+}
+
+.align-pad button.active::after {
+  background: var(--accent);
 }
 
 .preview-head {
