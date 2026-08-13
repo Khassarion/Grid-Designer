@@ -711,13 +711,22 @@ h2 {
   cursor: default;
 }
 
-.tree-item img {
+.tree-item img,
+.tree-thumb {
   width: 28px;
   height: 28px;
   object-fit: cover;
   border-radius: 3px;
   background: #000;
   pointer-events: none;
+  flex-shrink: 0;
+}
+
+.tree-thumb {
+  display: inline-block;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
 .tree-item .name {

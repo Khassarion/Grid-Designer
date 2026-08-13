@@ -955,9 +955,69 @@
     input.onblur = function () { finish(true); };
   }
 
+  var TREE_COLLAPSE_CHILD_THRESHOLD = 8;
+  var treeThumbObserver = null;
+
+  function ensureTreeThumbObserver() {
+    if (treeThumbObserver || !el.tree || typeof IntersectionObserver !== "function") return;
+    treeThumbObserver = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (en) {
+          if (!en.isIntersecting) return;
+          var node = en.target;
+          var url = node.getAttribute("data-thumb-url");
+          if (url) {
+            node.style.backgroundImage = "url(" + JSON.stringify(url) + ")";
+            node.removeAttribute("data-thumb-url");
+          }
+          treeThumbObserver.unobserve(node);
+        });
+      },
+      { root: el.tree, rootMargin: "80px 0px", threshold: 0.01 }
+    );
+  }
+
+  function makeTreeThumb(entry) {
+    var thumb = document.createElement("span");
+    thumb.className = "tree-thumb";
+    thumb.setAttribute("aria-hidden", "true");
+    if (!entry || !entry.url) return thumb;
+    // Defer bitmap work until the row is near the visible scrollport.
+    if (typeof IntersectionObserver === "function") {
+      thumb.setAttribute("data-thumb-url", entry.url);
+    } else {
+      thumb.style.backgroundImage = "url(" + JSON.stringify(entry.url) + ")";
+    }
+    return thumb;
+  }
+
+  function observeTreeThumbs(root) {
+    if (!root) return;
+    ensureTreeThumbObserver();
+    if (!treeThumbObserver) return;
+    var nodes = root.querySelectorAll
+      ? root.querySelectorAll("[data-thumb-url]")
+      : [];
+    for (var i = 0; i < nodes.length; i++) treeThumbObserver.observe(nodes[i]);
+  }
+
+  function collapseHeavyLayout(layoutId) {
+    var L = layouts[layoutId];
+    if (!L || isCanvas(layoutId)) return;
+    if ((L.children || []).length >= TREE_COLLAPSE_CHILD_THRESHOLD) {
+      collapsed[layoutId] = true;
+    }
+  }
+
   function renderTree() {
+    if (treeThumbObserver) {
+      treeThumbObserver.disconnect();
+      treeThumbObserver = null;
+    }
     el.tree.replaceChildren();
     if (!canvasId || !layouts[canvasId]) return;
+
+    var frag = document.createDocumentFragment();
 
     function appendChildren(parentId, depth) {
       var parent = layouts[parentId];
@@ -1023,7 +1083,7 @@
             selectLayout(L.id);
           };
           bindSiblingDrag(li, parentId, i);
-          el.tree.appendChild(li);
+          frag.appendChild(li);
           if (!isClosed) appendChildren(L.id, depth + 1);
           return;
         }
@@ -1037,10 +1097,7 @@
           spacer.className = "tree-twist empty";
           spacer.textContent = "·";
 
-          var thumb = document.createElement("img");
-          thumb.alt = "";
-          thumb.decoding = "async";
-          if (entry) thumb.src = entry.url;
+          var thumb = makeTreeThumb(entry);
           var inm = document.createElement("div");
           inm.className = "name";
           inm.textContent = entry ? entry.name : t("imageFallback");
@@ -1052,12 +1109,14 @@
             });
           };
           bindSiblingDrag(li, parentId, i);
-          el.tree.appendChild(li);
+          frag.appendChild(li);
         }
       });
     }
 
     appendChildren(canvasId, 0);
+    el.tree.appendChild(frag);
+    observeTreeThumbs(el.tree);
   }
 
   function paint(container, layoutId, depth, highlightId) {
@@ -2849,6 +2908,7 @@
         parent.children.push({ type: "layout", refId: newRoot, frame: null });
         reflow(parent);
       }
+      collapseHeavyLayout(newRoot);
       selectLayout(newRoot);
       status(t("layoutPasted"), "ok");
       requestAutoExport(true);
@@ -2942,6 +3002,9 @@
     }
     parent.children.splice(idx + 1, 0, childEntry);
     if (!isCanvas(parentId)) reflow(parent);
+    // Keep heavy image lists folded — tree thumbs were the main dup hitch.
+    collapseHeavyLayout(target.id);
+    collapseHeavyLayout(newRoot);
     selectLayout(newRoot);
     status(t("layoutDuplicated"), "ok");
     requestAutoExport(false);
