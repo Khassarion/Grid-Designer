@@ -1039,6 +1039,7 @@
 
           var thumb = document.createElement("img");
           thumb.alt = "";
+          thumb.decoding = "async";
           if (entry) thumb.src = entry.url;
           var inm = document.createElement("div");
           inm.className = "name";
@@ -1102,6 +1103,7 @@
       if (ch.type === "image" && images[ch.refId] && images[ch.refId].img) {
         var img = document.createElement("img");
         img.src = images[ch.refId].url;
+        img.decoding = "async";
         img.draggable = false;
         img.style.cssText = "left:0;top:0;width:100%;height:100%;object-fit:fill";
         cell.appendChild(img);
@@ -1194,15 +1196,39 @@
     syncChrome();
   }
 
-  function refreshPreview() {
+  var refreshRaf = 0;
+  var refreshWantFull = false;
+
+  function refreshPreviewNow() {
     writeForm();
     paint(el.stage, canvasId, 0, activeId !== canvasId ? activeId : null);
     applyZoom();
   }
 
-  function refresh() {
+  function refreshNow() {
     renderTree();
-    refreshPreview();
+    refreshPreviewNow();
+  }
+
+  /** Coalesce bursty UI updates (drag / duplicate / import) into one frame. */
+  function scheduleRefresh(full) {
+    if (full) refreshWantFull = true;
+    if (refreshRaf) return;
+    refreshRaf = requestAnimationFrame(function () {
+      refreshRaf = 0;
+      var fullPass = refreshWantFull;
+      refreshWantFull = false;
+      if (fullPass) refreshNow();
+      else refreshPreviewNow();
+    });
+  }
+
+  function refreshPreview() {
+    scheduleRefresh(false);
+  }
+
+  function refresh() {
+    scheduleRefresh(true);
   }
 
   /** Deepest layout under a client point in the preview (for file drops). */
@@ -1916,14 +1942,16 @@
     if (drag) return; // resize/move in progress — wait until mouseup
     clearTimeout(autoExportTimer);
     autoExportTimer = null;
-    if (immediate) {
-      runAutoExport();
-      return;
-    }
+    // Never run export synchronously on the same turn as a DOM refresh —
+    // full-res canvas draw is what feels like frame drops after load/dup.
+    // "immediate" only shortens the debounce; still yields via rAF.
+    var delay = immediate ? 48 : 280;
     autoExportTimer = setTimeout(function () {
       autoExportTimer = null;
-      runAutoExport();
-    }, 280);
+      requestAnimationFrame(function () {
+        runAutoExport();
+      });
+    }, delay);
   }
 
   function runAutoExport() {
@@ -2179,35 +2207,56 @@
     }
   }
 
+  /** Prefer blob: URLs over data: — DOM rebuilds re-assign src often; data URLs re-parse. */
+  function objectUrlFromDataUrl(dataUrl) {
+    if (!dataUrl || dataUrl.indexOf("data:") !== 0) return Promise.resolve(dataUrl);
+    return fetch(dataUrl)
+      .then(function (r) { return r.blob(); })
+      .then(function (blob) { return URL.createObjectURL(blob); });
+  }
+
+  function loadImageEntry(id, e) {
+    var dataUrl = e && e.dataUrl;
+    if (!dataUrl) return Promise.resolve(null);
+    var name = (e && e.name) || id;
+    return objectUrlFromDataUrl(dataUrl).catch(function () {
+      return dataUrl;
+    }).then(function (url) {
+      return new Promise(function (resolve, reject) {
+        var img = new Image();
+        img.onload = function () {
+          resolve({
+            id: id,
+            name: name,
+            url: url,
+            file: null,
+            img: img,
+          });
+        };
+        img.onerror = function () {
+          if (url && url.indexOf("blob:") === 0) {
+            try { URL.revokeObjectURL(url); } catch (err) { /* ignore */ }
+          }
+          reject(new Error(t("errImageLoadNamed", { name: name })));
+        };
+        img.src = url;
+      });
+    });
+  }
+
   function importProject(data) {
     validateProject(data);
     var nextLayouts = cloneLayoutsMap(data.layouts);
     var imgEntries = data.images || {};
-    var nextImages = {};
-    var chain = Promise.resolve();
-    Object.keys(imgEntries).forEach(function (id) {
-      chain = chain.then(function () {
-        return new Promise(function (resolve, reject) {
-          var e = imgEntries[id];
-          var dataUrl = e && e.dataUrl;
-          if (!dataUrl) return resolve();
-          var img = new Image();
-          img.onload = function () {
-            nextImages[id] = {
-              id: id,
-              name: (e && e.name) || id,
-              url: dataUrl,
-              file: null,
-              img: img,
-            };
-            resolve();
-          };
-          img.onerror = function () { reject(new Error(t("errImageLoadNamed", { name: (e && e.name) || id }))); };
-          img.src = dataUrl;
-        });
+    var ids = Object.keys(imgEntries);
+    // Decode in parallel — sequential data-URL load was a multi-second main-thread stall.
+    return Promise.all(ids.map(function (id) {
+      return loadImageEntry(id, imgEntries[id]);
+    })).then(function (entries) {
+      var nextImages = {};
+      entries.forEach(function (entry) {
+        if (entry) nextImages[entry.id] = entry;
       });
-    });
-    return chain.then(function () {
       clearProjectState();
       clearUndo();
       layouts = nextLayouts;
@@ -2841,9 +2890,8 @@
       });
       if (!isCanvas(parent.id)) reflow(parent);
       selectChildNode(parent.id, target.index + 1);
-      refresh();
       status(t("imageDuplicated"), "ok");
-      requestAutoExport(true);
+      requestAutoExport(false);
       return;
     }
 
@@ -2895,9 +2943,8 @@
     parent.children.splice(idx + 1, 0, childEntry);
     if (!isCanvas(parentId)) reflow(parent);
     selectLayout(newRoot);
-    refresh();
     status(t("layoutDuplicated"), "ok");
-    requestAutoExport(true);
+    requestAutoExport(false);
   }
 
   $("removeNodeBtn").onclick = function () { removeSelected(); };
