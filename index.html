@@ -65,10 +65,14 @@
             </div>
             <button id="removeNodeBtn" class="danger" type="button" data-i18n="remove" data-i18n-title="removeTitle">제거</button>
             <button id="clearChildrenBtn" class="danger" type="button" data-i18n="clearAll" data-i18n-title="clearAllTitle">전체</button>
-            <label class="checkbox-row hierarchy-show-thumbs" for="showTreeThumbs" data-i18n-title="showTreeThumbsTitle">
-              <input id="showTreeThumbs" type="checkbox" checked />
-              <span data-i18n="showTreeThumbs">썸네일</span>
-            </label>
+            <div class="menu-drop hierarchy-view-menu" id="treeViewMenu">
+              <button id="treeViewMenuBtn" type="button" aria-haspopup="true" aria-expanded="false" data-i18n="treeViewMenu" data-i18n-title="treeViewMenuTitle">보기 ▾</button>
+              <div class="menu-drop-panel" id="treeViewMenuPanel" hidden>
+                <button id="toggleTreeThumbsBtn" class="menu-drop-item" type="button" data-i18n="showTreeThumbs">썸네일 표시</button>
+                <button id="collapseAllLayoutsBtn" class="menu-drop-item" type="button" data-i18n="collapseAllLayouts">모두 접기</button>
+                <button id="expandAllLayoutsBtn" class="menu-drop-item" type="button" data-i18n="expandAllLayouts">모두 펼치기</button>
+              </div>
+            </div>
           </div>
           <input id="fileInput" class="file-input" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" />
           <ul id="layoutTree" class="tree-list"></ul>

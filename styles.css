@@ -46,6 +46,22 @@ body {
   flex-direction: column;
 }
 
+/* Keep scrolling; hide scrollbars in main panes */
+.tree-list,
+.panel-scroll,
+.preview-wrap {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.tree-list::-webkit-scrollbar,
+.panel-scroll::-webkit-scrollbar,
+.preview-wrap::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .app-bar {
   flex: 0 0 auto;
   display: flex;
@@ -278,20 +294,33 @@ button.danger {
   align-items: center;
 }
 
-.hierarchy-show-thumbs {
+.hierarchy-view-menu {
   margin-left: auto;
-  gap: 3px;
-  font-size: 0.68rem;
-  color: var(--muted);
-  white-space: nowrap;
-  user-select: none;
 }
 
-.hierarchy-show-thumbs input {
-  width: 12px;
-  height: 12px;
-  margin: 0;
-  accent-color: var(--accent);
+.hierarchy-view-menu > button {
+  font-size: 0.68rem;
+  padding: 0.18rem 0.4rem;
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+.hierarchy-view-menu > button:hover {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--panel-2);
+}
+
+.hierarchy-view-menu .menu-drop-panel {
+  left: auto;
+  right: 0;
+  min-width: 132px;
+}
+
+.menu-drop-item.is-checked::before {
+  content: "✓ ";
+  color: var(--accent);
 }
 
 .preview-panel {
@@ -699,8 +728,6 @@ h2 {
   background: var(--panel-2);
   border: 1px solid transparent;
   cursor: grab;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 28px;
 }
 
 .tree-item.tree-image {

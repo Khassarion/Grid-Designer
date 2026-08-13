@@ -459,17 +459,19 @@
     if (id && layouts[id] && !isCanvas(id)) reflow(layouts[id]);
   }
 
-  function byZ(L) {
-    return L.children.map(function (_, i) { return i; }).sort(function (a, b) {
-      return ((L.children[a].frame && L.children[a].frame.z) || 0) -
-        ((L.children[b].frame && L.children[b].frame.z) || 0);
+  /** Keep frame.z aligned with children[] so stack order == hierarchy order. */
+  function syncChildStackZ(parent) {
+    if (!parent) return;
+    parent.children.forEach(function (ch, i) {
+      if (!ch.frame) return;
+      ch.frame.z = i + 1;
+      if (ch.frame.z > maxZ) maxZ = ch.frame.z;
     });
   }
 
-  /** Canvas: free z-order. Layout: hierarchy / children array order. */
+  /** Paint / hierarchy share the same order: children[] (back → front). */
   function childPaintOrder(L) {
     if (!L) return [];
-    if (isCanvas(L.id)) return byZ(L);
     return L.children.map(function (_, i) { return i; });
   }
 
@@ -905,8 +907,9 @@
         selectedChild = index;
         if (previewSel.parentId === parentId) previewSel = { parentId: parentId, index: index };
       }
-      if (!isCanvas(parentId)) reflow(parent);
-        refresh();
+      if (isCanvas(parentId)) syncChildStackZ(parent);
+      else reflow(parent);
+      refresh();
       requestAutoExport(true);
     };
   }
@@ -964,6 +967,8 @@
 
   var TREE_COLLAPSE_CHILD_THRESHOLD = 8;
   var treeThumbObserver = null;
+  /** Last user scroll in #layoutTree — survives DOM rebuild / accidental scrollTop=0. */
+  var treeScrollTop = 0;
 
   function ensureTreeThumbObserver() {
     if (treeThumbObserver || !el.tree || typeof IntersectionObserver !== "function") return;
@@ -1016,7 +1021,23 @@
     }
   }
 
+  function rememberTreeScroll() {
+    if (el.tree) treeScrollTop = el.tree.scrollTop;
+  }
+
+  /** Restore prior scroll after rebuild. Do not chase the active row (collapse/expand must not jump). */
+  function restoreTreeScroll(prevScroll) {
+    if (!el.tree) return;
+    // Force layout so scrollHeight is real before applying scrollTop (otherwise clamped to 0).
+    void el.tree.offsetHeight;
+    var max = Math.max(0, el.tree.scrollHeight - el.tree.clientHeight);
+    el.tree.scrollTop = Math.max(0, Math.min(prevScroll, max));
+    treeScrollTop = el.tree.scrollTop;
+  }
+
   function renderTree() {
+    rememberTreeScroll();
+    var prevScroll = treeScrollTop;
     if (treeThumbObserver) {
       treeThumbObserver.disconnect();
       treeThumbObserver = null;
@@ -1029,7 +1050,8 @@
     function appendChildren(parentId, depth) {
       var parent = layouts[parentId];
       if (!parent) return;
-      parent.children.forEach(function (ch, i) {
+      childPaintOrder(parent).forEach(function (i) {
+        var ch = parent.children[i];
         var li = document.createElement("li");
         var pad = document.createElement("span");
         pad.className = "tree-pad";
@@ -1126,6 +1148,7 @@
     appendChildren(canvasId, 0);
     el.tree.appendChild(frag);
     observeTreeThumbs(el.tree);
+    restoreTreeScroll(prevScroll);
   }
 
   function paint(container, layoutId, depth, highlightId) {
@@ -2424,6 +2447,13 @@
           if (ch.frame && ch.frame.z != null && ch.frame.z > maxZ) maxZ = ch.frame.z;
         });
       });
+      // Migrate old canvas z-stack into children[] order (hierarchy == paint).
+      if (layouts[canvasId]) {
+        layouts[canvasId].children.sort(function (a, b) {
+          return ((a.frame && a.frame.z) || 0) - ((b.frame && b.frame.z) || 0);
+        });
+        syncChildStackZ(layouts[canvasId]);
+      }
       selectedChild = -1;
       previewSel = { parentId: null, index: -1 };
       clearImageSel();
@@ -2509,9 +2539,8 @@
       var ch = parent.children[idx];
       if (!isInteractiveChild(parentId, ch)) return;
 
+      pushUndo();
       previewSel = { parentId: parentId, index: idx };
-      maxZ += 1;
-      ch.frame.z = maxZ;
 
       if (ch.type === "layout" && layouts[ch.refId]) {
         clearImageSel();
@@ -2534,7 +2563,6 @@
         expandAncestors(parentId);
       }
 
-      pushUndo();
       // Paint selection chrome once, then measure local coords from the live stage.
       paint(el.stage, canvasId, 0, activeId !== canvasId ? activeId : null);
       applyZoom();
@@ -2730,9 +2758,63 @@
 
   function closeAddMenu() { setAddMenuOpen(false); }
 
+  function setTreeViewMenuOpen(open) {
+    var panel = $("treeViewMenuPanel");
+    var btn = $("treeViewMenuBtn");
+    if (!panel || !btn) return;
+    if (open) syncTreeViewMenu();
+    panel.hidden = !open;
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function closeTreeViewMenu() { setTreeViewMenuOpen(false); }
+
+  function syncTreeViewMenu() {
+    var thumbsBtn = $("toggleTreeThumbsBtn");
+    if (!thumbsBtn) return;
+    thumbsBtn.classList.toggle("is-checked", !!showTreeThumbs);
+    thumbsBtn.setAttribute("aria-checked", showTreeThumbs ? "true" : "false");
+  }
+
+  function walkTreeLayouts(fn) {
+    function walk(id) {
+      var L = layouts[id];
+      if (!L) return;
+      (L.children || []).forEach(function (ch) {
+        if (ch.type === "layout" && ch.refId && layouts[ch.refId]) {
+          fn(layouts[ch.refId]);
+          walk(ch.refId);
+        }
+      });
+    }
+    if (canvasId) walk(canvasId);
+  }
+
+  function collapseAllTreeLayouts() {
+    walkTreeLayouts(function (L) {
+      if (L.children && L.children.length) collapsed[L.id] = true;
+    });
+    renderTree();
+  }
+
+  function expandAllTreeLayouts() {
+    collapsed = {};
+    renderTree();
+  }
+
+  function setShowTreeThumbs(on) {
+    showTreeThumbs = !!on;
+    try {
+      localStorage.setItem(SHOW_TREE_THUMBS_LS, showTreeThumbs ? "1" : "0");
+    } catch (ePersist) { /* ignore */ }
+    syncTreeViewMenu();
+    renderTree();
+  }
+
   if ($("addMenuBtn")) {
     $("addMenuBtn").onclick = function (e) {
       e.stopPropagation();
+      closeTreeViewMenu();
       var panel = $("addMenuPanel");
       setAddMenuOpen(!!(panel && panel.hidden));
     };
@@ -2743,10 +2825,39 @@
       if (el.file) el.file.click();
     };
   }
+
+  if ($("treeViewMenuBtn")) {
+    $("treeViewMenuBtn").onclick = function (e) {
+      e.stopPropagation();
+      closeAddMenu();
+      var panel = $("treeViewMenuPanel");
+      setTreeViewMenuOpen(!!(panel && panel.hidden));
+    };
+  }
+  if ($("toggleTreeThumbsBtn")) {
+    $("toggleTreeThumbsBtn").setAttribute("role", "menuitemcheckbox");
+    $("toggleTreeThumbsBtn").onclick = function () {
+      setShowTreeThumbs(!showTreeThumbs);
+    };
+  }
+  if ($("collapseAllLayoutsBtn")) {
+    $("collapseAllLayoutsBtn").onclick = function () {
+      closeTreeViewMenu();
+      collapseAllTreeLayouts();
+    };
+  }
+  if ($("expandAllLayoutsBtn")) {
+    $("expandAllLayoutsBtn").onclick = function () {
+      closeTreeViewMenu();
+      expandAllTreeLayouts();
+    };
+  }
+
   document.addEventListener("mousedown", function (e) {
-    var menu = $("addMenu");
-    if (!menu || menu.contains(e.target)) return;
-    closeAddMenu();
+    var addMenu = $("addMenu");
+    if (addMenu && !addMenu.contains(e.target)) closeAddMenu();
+    var treeMenu = $("treeViewMenu");
+    if (treeMenu && !treeMenu.contains(e.target)) closeTreeViewMenu();
   });
 
   function deleteLayoutById(id) {
@@ -3378,6 +3489,7 @@
     syncChrome();
     applyZoom();
     renderTree();
+    syncTreeViewMenu();
     refreshPngPathLabel();
     updateFolderWatchBtn();
     var modal = $("folderWatchModal");
@@ -3411,22 +3523,16 @@
   var appVerEl = $("appVersion");
   if (appVerEl) appVerEl.textContent = "v" + APP_VERSION;
 
+  if (el.tree) {
+    el.tree.addEventListener("scroll", rememberTreeScroll, { passive: true });
+  }
+
   try {
     var storedThumbs = localStorage.getItem(SHOW_TREE_THUMBS_LS);
     if (storedThumbs === "0" || storedThumbs === "false") showTreeThumbs = false;
     else if (storedThumbs === "1" || storedThumbs === "true") showTreeThumbs = true;
   } catch (eThumbs) { /* ignore */ }
-  var showTreeThumbsCb = $("showTreeThumbs");
-  if (showTreeThumbsCb) {
-    showTreeThumbsCb.checked = showTreeThumbs;
-    showTreeThumbsCb.addEventListener("change", function () {
-      showTreeThumbs = !!showTreeThumbsCb.checked;
-      try {
-        localStorage.setItem(SHOW_TREE_THUMBS_LS, showTreeThumbs ? "1" : "0");
-      } catch (ePersist) { /* ignore */ }
-      renderTree();
-    });
-  }
+  syncTreeViewMenu();
 
   canvasId = makeLayout(t("canvas"), null);
   activeId = canvasId;

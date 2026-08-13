@@ -9,5 +9,5 @@
  */
 (function (global) {
   "use strict";
-  global.GC_APP_VERSION = "1.0.0";
+  global.GC_APP_VERSION = "1.1.0";
 })(window);
