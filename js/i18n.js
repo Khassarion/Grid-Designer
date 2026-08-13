@@ -1,17 +1,17 @@
 /**
- * Grid Composer — UI strings (ko / en)
+ * Grid Designer — UI strings (ko / en)
  *
  * Copyright (c) 2026 AINukeHere
- * SPDX-License-Identifier: LicenseRef-GridComposer-Proprietary
+ * SPDX-License-Identifier: LicenseRef-GridDesigner-Proprietary
  */
 (function (global) {
   "use strict";
 
-  var STORAGE_KEY = "grid-composer-lang";
+  var STORAGE_KEY = "grid-designer-lang";
 
   var STRINGS = {
     ko: {
-      appTitle: "OBS Grid Designer",
+      appTitle: "Grid Designer",
       tutorial: "튜토리얼",
       tutorialTitle: "후원 이미지 벽지 사용법",
       open: "열기",
@@ -146,7 +146,7 @@
       nothingToUndo: "되돌릴 작업이 없습니다.",
       undone: "실행 취소",
       errBadFile: "잘못된 파일입니다.",
-      errWrongKind: "OBS Grid Designer 구조 파일이 아닙니다.",
+      errWrongKind: "Grid Designer 구조 파일이 아닙니다.",
       errBadVersion: "지원하지 않는 구조 버전입니다.",
       errNoCanvas: "캔버스 정보가 없습니다.",
       errImageLoadNamed: "이미지 로드 실패: {name}",
@@ -190,7 +190,7 @@
       pngLine: "PNG: ",
     },
     en: {
-      appTitle: "OBS Grid Designer",
+      appTitle: "Grid Designer",
       tutorial: "Tutorial",
       tutorialTitle: "Donation wallpaper walkthrough",
       open: "Open",
@@ -325,7 +325,7 @@
       nothingToUndo: "Nothing to undo.",
       undone: "Undone",
       errBadFile: "Invalid file.",
-      errWrongKind: "Not an OBS Grid Designer project file.",
+      errWrongKind: "Not a Grid Designer project file.",
       errBadVersion: "Unsupported project version.",
       errNoCanvas: "Canvas data is missing.",
       errImageLoadNamed: "Failed to load image: {name}",

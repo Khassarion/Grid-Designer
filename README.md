@@ -1,11 +1,11 @@
-# Grid Composer
+# Grid Designer
 
 브라우저에서 이미지를 격자·중첩 레이아웃으로 배치하고 **PNG**로 내보내는 정적 웹 에디터입니다.  
 서버·설치·빌드 없이 `index.html`만 열면 동작합니다.
 
-**사용:** [https://ainukehere.github.io/Grid-Composer](https://ainukehere.github.io/Grid-Composer)
+**사용:** [https://ainukehere.github.io/Grid-Designer](https://ainukehere.github.io/Grid-Designer)
 
-**튜토리얼 (후원 이미지 벽지):** [tutorial.html](tutorial.html) · [배포본](https://ainukehere.github.io/Grid-Composer/tutorial.html)
+**튜토리얼 (후원 이미지 벽지):** [tutorial.html](tutorial.html) · [배포본](https://ainukehere.github.io/Grid-Designer/tutorial.html)
 
 ---
 

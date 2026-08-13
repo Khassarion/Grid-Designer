@@ -1,10 +1,10 @@
 /**
- * OBS Grid Designer — canvas (scene) + nested layouts → PNG
+ * Grid Designer — canvas (scene) + nested layouts → PNG
  *
  * Copyright (c) 2026 AINukeHere
- * SPDX-License-Identifier: LicenseRef-GridComposer-Proprietary
+ * SPDX-License-Identifier: LicenseRef-GridDesigner-Proprietary
  *
- * Canvas = free container (like OBS scene). No grid.
+ * Canvas = free container (like scene). No grid.
  * Layout = grid. Nested under a layout: size locked to parent cell, content 1:1 (no squash).
  */
 (function () {
@@ -71,8 +71,8 @@
   var autoExportBusy = false;
   var autoExportPending = false;
 
-  var FOLDER_WATCH_LS = "grid-composer-folder-watch";
-  var FOLDER_SEEN_LS = "grid-composer-folder-seen";
+  var FOLDER_WATCH_LS = "grid-designer-folder-watch";
+  var FOLDER_SEEN_LS = "grid-designer-folder-seen";
   var FOLDER_POLL_MS = 1000;
   var folderHandle = null;
   var folderWatch = {
@@ -2233,7 +2233,7 @@
     var includeImages = !!( $("saveWithImages") && $("saveWithImages").checked );
     status(includeImages ? t("savingWithImages") : t("savingStructure"));
     buildProject(includeImages).then(function (project) {
-      downloadJson(project, "grid-composer-structure.json");
+      downloadJson(project, "grid-designer-structure.json");
       var nLay = Object.keys(project.layouts).length;
       var nImg = Object.keys(project.images).length;
       if (includeImages) {

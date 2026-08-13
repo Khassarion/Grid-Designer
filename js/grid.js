@@ -2,7 +2,7 @@
  * Grid layout: fixed cell size, padding4, spacing, corner/axis, child group align
  *
  * Copyright (c) 2026 AINukeHere
- * SPDX-License-Identifier: LicenseRef-GridComposer-Proprietary
+ * SPDX-License-Identifier: LicenseRef-GridDesigner-Proprietary
  */
 (function (global) {
   "use strict";
