@@ -73,7 +73,9 @@
 
   var FOLDER_WATCH_LS = "grid-designer-folder-watch";
   var FOLDER_SEEN_LS = "grid-designer-folder-seen";
+  var SHOW_TREE_THUMBS_LS = "grid-designer-show-tree-thumbs";
   var FOLDER_POLL_MS = 1000;
+  var showTreeThumbs = true;
   var folderHandle = null;
   var folderWatch = {
     enabled: false,
@@ -320,7 +322,12 @@
     }
 
     // Layout: create missing frames only — do not re-grid until reflow()
-    var cells = computeGrid(Math.max(L.children.length, 1), L.settings);
+    var missing = false;
+    for (var mi = 0; mi < L.children.length; mi++) {
+      var mf = L.children[mi].frame;
+      if (!mf || !(mf.w > 0) || !(mf.h > 0)) { missing = true; break; }
+    }
+    var cells = missing ? computeGrid(Math.max(L.children.length, 1), L.settings) : null;
     L.children.forEach(function (ch, i) {
       if (!ch.frame || !(ch.frame.w > 0) || !(ch.frame.h > 0)) {
         ch.frame = makeFrame(cells[i] || cells[0], i);
@@ -1091,17 +1098,19 @@
         if (ch.type === "image") {
           var imgActive = isImageSelected(parentId, i);
           var entry = images[ch.refId];
-          li.className = "tree-item tree-image" + (imgActive ? " active" : "");
+          li.className = "tree-item tree-image" +
+            (showTreeThumbs ? "" : " no-thumb") +
+            (imgActive ? " active" : "");
 
           var spacer = document.createElement("span");
           spacer.className = "tree-twist empty";
           spacer.textContent = "·";
 
-          var thumb = makeTreeThumb(entry);
           var inm = document.createElement("div");
           inm.className = "name";
           inm.textContent = entry ? entry.name : t("imageFallback");
-          li.append(pad, spacer, thumb, inm);
+          if (showTreeThumbs) li.append(pad, spacer, makeTreeThumb(entry), inm);
+          else li.append(pad, spacer, inm);
           li.onclick = function (e) {
             selectChildNode(parentId, i, {
               toggle: e.ctrlKey || e.metaKey,
@@ -1219,16 +1228,30 @@
     });
   }
 
-  function toLocal(clientX, clientY, layoutId) {
-    var stage =
-      layoutId === canvasId
-        ? el.stage
-        : el.stage.querySelector('.nested-stage[data-layout-id="' + layoutId + '"]') || el.stage;
+  function stageElFor(layoutId) {
+    if (layoutId === canvasId) return el.stage;
+    return el.stage.querySelector('.nested-stage[data-layout-id="' + layoutId + '"]') || el.stage;
+  }
+
+  function measureLocal(layoutId) {
+    var stage = stageElFor(layoutId);
     var r = stage.getBoundingClientRect();
     var s = ns(layouts[layoutId].settings);
     return {
-      x: (clientX - r.left) * (s.width / Math.max(1, r.width)),
-      y: (clientY - r.top) * (s.height / Math.max(1, r.height)),
+      left: r.left,
+      top: r.top,
+      sx: s.width / Math.max(1, r.width),
+      sy: s.height / Math.max(1, r.height),
+    };
+  }
+
+  function toLocal(clientX, clientY, layoutId) {
+    var m = drag && drag.local && drag.layoutId === layoutId
+      ? drag.local
+      : measureLocal(layoutId);
+    return {
+      x: (clientX - m.left) * m.sx,
+      y: (clientY - m.top) * m.sy,
     };
   }
 
@@ -1252,16 +1275,82 @@
     }
     el.meta.textContent = meta;
     if ($("zoomOutBtn")) $("zoomOutBtn").disabled = zoom <= 1;
-    syncChrome();
   }
 
   var refreshRaf = 0;
   var refreshWantFull = false;
+  var dragRaf = 0;
+
+  /** Move/resize one cell in place — no full preview rebuild (avoids tree layout thrash). */
+  function updateDragVisual() {
+    if (!drag || !drag.cell || !drag.cell.isConnected) return;
+    var L = layouts[drag.layoutId];
+    var ch = L && L.children[drag.index];
+    if (!ch || !ch.frame) return;
+    var f = ch.frame;
+    var cell = drag.cell;
+    cell.style.left = f.x + "px";
+    cell.style.top = f.y + "px";
+    cell.style.width = f.w + "px";
+    cell.style.height = f.h + "px";
+    if (f.z != null) cell.style.zIndex = String(f.z);
+
+    if (ch.type === "layout" && layouts[ch.refId]) {
+      var nested = null;
+      for (var ni = 0; ni < cell.children.length; ni++) {
+        if (cell.children[ni].classList.contains("nested-stage")) {
+          nested = cell.children[ni];
+          break;
+        }
+      }
+      if (nested) {
+        nested.style.width = f.w + "px";
+        nested.style.height = f.h + "px";
+        if (drag.repaintNested) {
+          paint(nested, ch.refId, 1, activeId !== canvasId ? activeId : null);
+          drag.repaintNested = false;
+        }
+      }
+    }
+
+    var sizeLab = null;
+    for (var si = 0; si < cell.children.length; si++) {
+      if (cell.children[si].classList.contains("grid-cell-size")) {
+        sizeLab = cell.children[si];
+        break;
+      }
+    }
+    if (sizeLab) sizeLab.textContent = Math.round(f.w) + "×" + Math.round(f.h);
+  }
+
+  function scheduleDragVisual() {
+    if (dragRaf) return;
+    dragRaf = requestAnimationFrame(function () {
+      dragRaf = 0;
+      if (!drag) return;
+      if (!drag.cell || !drag.cell.isConnected) {
+        // Fallback if the cell node was detached — rare, keep editing usable.
+        paint(el.stage, canvasId, 0, activeId !== canvasId ? activeId : null);
+        drag.cell = el.stage.querySelector(
+          '.grid-cell.interactive[data-parent-id="' + drag.layoutId +
+          '"][data-child-index="' + drag.index + '"]'
+        );
+        drag.local = measureLocal(drag.layoutId);
+        return;
+      }
+      updateDragVisual();
+    });
+  }
 
   function refreshPreviewNow() {
+    if (drag) {
+      updateDragVisual();
+      return;
+    }
     writeForm();
     paint(el.stage, canvasId, 0, activeId !== canvasId ? activeId : null);
     applyZoom();
+    syncChrome();
   }
 
   function refreshNow() {
@@ -1283,6 +1372,10 @@
   }
 
   function refreshPreview() {
+    if (drag) {
+      scheduleDragVisual();
+      return;
+    }
     scheduleRefresh(false);
   }
 
@@ -2441,21 +2534,31 @@
         expandAncestors(parentId);
       }
 
-      var p2 = toLocal(e.clientX, e.clientY, parentId);
-      var fr = ch.frame;
       pushUndo();
+      // Paint selection chrome once, then measure local coords from the live stage.
+      paint(el.stage, canvasId, 0, activeId !== canvasId ? activeId : null);
+      applyZoom();
+      syncChrome();
+      renderTree();
+
+      var liveCell = el.stage.querySelector(
+        '.grid-cell.interactive[data-parent-id="' + parentId + '"][data-child-index="' + idx + '"]'
+      );
+      var local = measureLocal(parentId);
+      var fr = ch.frame;
       drag = {
         mode: handle ? "resize" : "move",
         layoutId: parentId,
         index: idx,
         handle: handle ? handle.dataset.handle : null,
-        x0: p2.x,
-        y0: p2.y,
+        x0: (e.clientX - local.left) * local.sx,
+        y0: (e.clientY - local.top) * local.sy,
         orig: { x: fr.x, y: fr.y, w: fr.w, h: fr.h },
         undoPushed: true,
+        cell: liveCell,
+        local: local,
+        repaintNested: false,
       };
-      refreshPreview();
-      renderTree();
       e.preventDefault();
       return;
     }
@@ -2527,13 +2630,12 @@
     if (ch.type === "layout" && layouts[ch.refId]) {
       layouts[ch.refId].settings.width = ch.frame.w;
       layouts[ch.refId].settings.height = ch.frame.h;
-      if (activeId === ch.refId) {
-        el.w.value = ch.frame.w;
-        el.h.value = ch.frame.h;
+      if (drag.mode === "resize") {
+        reflowIfLayout(ch.refId);
+        drag.repaintNested = true;
       }
-      if (drag.mode === "resize") reflowIfLayout(ch.refId);
     }
-    refreshPreview();
+    scheduleDragVisual();
     e.preventDefault();
   });
 
@@ -2541,8 +2643,12 @@
     if (!drag) return;
     var finished = drag;
     drag = null;
-      var PL = layouts[finished.layoutId];
-      var pch = PL && PL.children[finished.index];
+    if (dragRaf) {
+      cancelAnimationFrame(dragRaf);
+      dragRaf = 0;
+    }
+    var PL = layouts[finished.layoutId];
+    var pch = PL && PL.children[finished.index];
     var fr = pch && pch.frame;
     var o = finished.orig;
     var changed = !!(fr && o && (
@@ -2550,6 +2656,10 @@
     ));
     if (!changed && finished.undoPushed && undoStack.length) undoStack.pop();
     if (finished.mode === "resize" && pch && pch.type === "layout") reflowIfLayout(pch.refId);
+    if (pch && pch.type === "layout" && layouts[pch.refId] && activeId === pch.refId) {
+      el.w.value = pch.frame.w;
+      el.h.value = pch.frame.h;
+    }
     refresh();
     if (changed) {
       status(t("frameUpdated"), "ok");
@@ -3300,6 +3410,23 @@
 
   var appVerEl = $("appVersion");
   if (appVerEl) appVerEl.textContent = "v" + APP_VERSION;
+
+  try {
+    var storedThumbs = localStorage.getItem(SHOW_TREE_THUMBS_LS);
+    if (storedThumbs === "0" || storedThumbs === "false") showTreeThumbs = false;
+    else if (storedThumbs === "1" || storedThumbs === "true") showTreeThumbs = true;
+  } catch (eThumbs) { /* ignore */ }
+  var showTreeThumbsCb = $("showTreeThumbs");
+  if (showTreeThumbsCb) {
+    showTreeThumbsCb.checked = showTreeThumbs;
+    showTreeThumbsCb.addEventListener("change", function () {
+      showTreeThumbs = !!showTreeThumbsCb.checked;
+      try {
+        localStorage.setItem(SHOW_TREE_THUMBS_LS, showTreeThumbs ? "1" : "0");
+      } catch (ePersist) { /* ignore */ }
+      renderTree();
+    });
+  }
 
   canvasId = makeLayout(t("canvas"), null);
   activeId = canvasId;

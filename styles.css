@@ -231,11 +231,13 @@ button.danger {
 .side-hierarchy {
   flex: 1 1 35%;
   min-height: 160px;
+  contain: layout paint style;
 }
 
 .side-hierarchy .tree-list {
   flex: 1;
   min-height: 80px;
+  contain: layout paint;
 }
 
 .side-settings {
@@ -270,6 +272,26 @@ button.danger {
 
 .actions.tight.wrap {
   flex-wrap: wrap;
+}
+
+.hierarchy-actions {
+  align-items: center;
+}
+
+.hierarchy-show-thumbs {
+  margin-left: auto;
+  gap: 3px;
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.hierarchy-show-thumbs input {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .preview-panel {
@@ -677,10 +699,16 @@ h2 {
   background: var(--panel-2);
   border: 1px solid transparent;
   cursor: grab;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 28px;
 }
 
 .tree-item.tree-image {
   grid-template-columns: auto auto 28px 1fr;
+}
+
+.tree-item.tree-image.no-thumb {
+  grid-template-columns: auto auto 1fr;
 }
 
 .tree-item.active {
@@ -939,6 +967,7 @@ h2 {
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 5px;
+  contain: layout paint;
   background:
     linear-gradient(45deg, #1a1d24 25%, transparent 25%),
     linear-gradient(-45deg, #1a1d24 25%, transparent 25%),

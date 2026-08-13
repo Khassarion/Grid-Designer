@@ -54,7 +54,7 @@
           <div class="side-head">
             <h2 data-i18n="hierarchy">계층 구조</h2>
           </div>
-          <div class="actions tight wrap">
+          <div class="actions tight wrap hierarchy-actions">
             <div class="menu-drop" id="addMenu">
               <button id="addMenuBtn" class="primary" type="button" aria-haspopup="true" aria-expanded="false" data-i18n="addMenu">추가 ▾</button>
               <div class="menu-drop-panel" id="addMenuPanel" hidden>
@@ -65,6 +65,10 @@
             </div>
             <button id="removeNodeBtn" class="danger" type="button" data-i18n="remove" data-i18n-title="removeTitle">제거</button>
             <button id="clearChildrenBtn" class="danger" type="button" data-i18n="clearAll" data-i18n-title="clearAllTitle">전체</button>
+            <label class="checkbox-row hierarchy-show-thumbs" for="showTreeThumbs" data-i18n-title="showTreeThumbsTitle">
+              <input id="showTreeThumbs" type="checkbox" checked />
+              <span data-i18n="showTreeThumbs">썸네일</span>
+            </label>
           </div>
           <input id="fileInput" class="file-input" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" />
           <ul id="layoutTree" class="tree-list"></ul>
