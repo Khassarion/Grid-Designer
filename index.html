@@ -15,7 +15,7 @@
   <body>
     <header class="app-bar">
       <div class="app-bar-left">
-        <span class="app-brand">Grid Designer</span>
+        <span class="app-brand">Grid Designer <span id="appVersion" class="app-version"></span></span>
         <div class="app-bar-group" data-i18n-title="projectGroupTitle">
           <label class="file-pick-label" for="projectInput" data-i18n="open">열기</label>
           <input id="projectInput" class="file-input" type="file" accept="application/json,.json" />
@@ -284,6 +284,7 @@
       </div>
     </div>
 
+    <script src="js/version.js"></script>
     <script src="js/grid.js"></script>
     <script src="js/i18n.js"></script>
     <script src="js/app.js"></script>

@@ -2048,7 +2048,9 @@
   }
 
   var PROJECT_KIND = "obs-grid-designer";
+  /** JSON project file format — not the app release version (see js/version.js). */
   var PROJECT_VERSION = 1;
+  var APP_VERSION = (window.GC_APP_VERSION && String(window.GC_APP_VERSION)) || "0.0.0";
 
   function cloneLayoutsMap(src) {
     var out = {};
@@ -3295,6 +3297,9 @@
     };
   }
   I18N.onChange(applyLanguageUi);
+
+  var appVerEl = $("appVersion");
+  if (appVerEl) appVerEl.textContent = "v" + APP_VERSION;
 
   canvasId = makeLayout(t("canvas"), null);
   activeId = canvasId;

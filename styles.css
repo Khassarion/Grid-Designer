@@ -84,6 +84,14 @@ body {
   white-space: nowrap;
 }
 
+.app-version {
+  margin-left: 0.25em;
+  font-size: 0.72em;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
 .app-tutorial-link {
   margin-right: 2px;
   padding: 0.22rem 0.45rem;

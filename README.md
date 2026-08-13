@@ -3,9 +3,32 @@
 브라우저에서 이미지를 격자·중첩 레이아웃으로 배치하고 **PNG**로 내보내는 정적 웹 에디터입니다.  
 서버·설치·빌드 없이 `index.html`만 열면 동작합니다.
 
+**현재 버전:** `1.0.0` · 소스: [`js/version.js`](js/version.js)
+
 **사용:** [https://ainukehere.github.io/Grid-Designer](https://ainukehere.github.io/Grid-Designer)
 
 **튜토리얼 (후원 이미지 벽지):** [tutorial.html](tutorial.html) · [배포본](https://ainukehere.github.io/Grid-Designer/tutorial.html)
+
+---
+
+## 변경 이력
+
+버전은 [SemVer](https://semver.org/lang/ko/)(`MAJOR.MINOR.PATCH`)를 따릅니다.  
+앱 릴리즈 버전(`js/version.js`)과 구조 JSON의 `version` 필드(`PROJECT_VERSION`)는 별개입니다.
+
+### 1.0.0 — 2026-08-14
+
+첫 공식 버전 넘버링. 기존 웹 에디터 기능을 기준으로 정리했습니다.
+
+- 제품명 **Grid Designer**로 통일, favicon·GitHub Pages 저장소명 정리
+- 이미지 포함 구조 파일 로드·복제 성능 개선 (`data:` → `blob:` URL, UI refresh 합치기, 자동 내보내기 양보)
+- 계층 구조 최적화 (썸네일 지연 로드, 자식이 많은 레이아웃 복제/붙여넣기 시 접기)
+- 폴더 감시로 새 이미지 자동 추가 (Chrome/Edge)
+- 한국어 / English UI
+- 후원 이미지 벽지 튜토리얼 페이지
+- 구조 JSON 저장·불러오기 (이미지 포함 옵션)
+- PNG 내보내기·자동 내보내기 (저장 위치 고정)
+- 캔버스·중첩 레이아웃, 복사/복제/실행 취소 등 편집 기능
 
 ---
 
@@ -109,8 +132,11 @@ index.html
 tutorial.html / tutorial.css   # 사용자 튜토리얼
 styles.css
 .nojekyll                      # GitHub Pages용
+js/version.js                  # 앱 릴리즈 버전 (SemVer)
 js/grid.js                     # 격자 계산
+js/i18n.js                     # UI 문자열
 js/app.js                      # 편집기
+icons/                         # favicon 등
 ```
 
 ---
