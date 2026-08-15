@@ -429,7 +429,7 @@
     return { x: nx, y: ny, w: nw, h: nh };
   }
 
-  /** Keep resize aspect ratio from original frame (Shift). */
+  /** Keep resize aspect ratio from original frame (hold Shift). */
   function applyAspectLock(x, y, w, h, o, hd, minSize) {
     var ratio = o.w / Math.max(1e-6, o.h);
     minSize = minSize || 24;
@@ -469,6 +469,79 @@
 
   function reflowIfLayout(id) {
     if (id && layouts[id] && !isCanvas(id)) reflow(layouts[id]);
+  }
+
+  /** Snapshot cell/pad/spacing for Ctrl+resize (recompute px — not CSS transform). */
+  function snapshotLayoutCellSettings(rootId) {
+    var map = {};
+    function walk(id) {
+      var L = layouts[id];
+      if (!L || isCanvas(id) || map[id]) return;
+      var s = ns(L.settings);
+      map[id] = {
+        cell_w: s.cell_w,
+        cell_h: s.cell_h,
+        pad_l: s.pad_l,
+        pad_r: s.pad_r,
+        pad_t: s.pad_t,
+        pad_b: s.pad_b,
+        spacing_x: s.spacing_x,
+        spacing_y: s.spacing_y,
+      };
+      (L.children || []).forEach(function (ch) {
+        if (ch.type === "layout" && ch.refId) walk(ch.refId);
+      });
+    }
+    walk(rootId);
+    return map;
+  }
+
+  function restoreLayoutCellSettings(origMap) {
+    if (!origMap) return;
+    Object.keys(origMap).forEach(function (id) {
+      var L = layouts[id];
+      var o = origMap[id];
+      if (!L || !o) return;
+      L.settings.cell_w = o.cell_w;
+      L.settings.cell_h = o.cell_h;
+      L.settings.pad_l = o.pad_l;
+      L.settings.pad_r = o.pad_r;
+      L.settings.pad_t = o.pad_t;
+      L.settings.pad_b = o.pad_b;
+      L.settings.spacing_x = o.spacing_x;
+      L.settings.spacing_y = o.spacing_y;
+    });
+  }
+
+  /**
+   * Ctrl+layout resize (on mouseup only): change real cell px by layout size ratio
+   * so the content group matches the drag preview — not used during drag (CSS scale then).
+   */
+  function applyProportionalCellSizes(rootId, rw, rh, origMap) {
+    if (!origMap) return;
+    Object.keys(origMap).forEach(function (id) {
+      var L = layouts[id];
+      var o = origMap[id];
+      if (!L || !o) return;
+      L.settings.cell_w = Math.max(1, Math.round(o.cell_w * rw));
+      L.settings.cell_h = Math.max(1, Math.round(o.cell_h * rh));
+      L.settings.pad_l = Math.max(0, Math.round(o.pad_l * rw));
+      L.settings.pad_r = Math.max(0, Math.round(o.pad_r * rw));
+      L.settings.pad_t = Math.max(0, Math.round(o.pad_t * rh));
+      L.settings.pad_b = Math.max(0, Math.round(o.pad_b * rh));
+      L.settings.spacing_x = Math.round(o.spacing_x * rw);
+      L.settings.spacing_y = Math.round(o.spacing_y * rh);
+    });
+    reflowLayoutTree(rootId);
+  }
+
+  function reflowLayoutTree(id) {
+    reflowIfLayout(id);
+    var L = layouts[id];
+    if (!L) return;
+    (L.children || []).forEach(function (ch) {
+      if (ch.type === "layout" && ch.refId) reflowLayoutTree(ch.refId);
+    });
   }
 
   /** Keep frame.z aligned with children[] so stack order == hierarchy order. */
@@ -1365,11 +1438,30 @@
         }
       }
       if (nested) {
-        nested.style.width = f.w + "px";
-        nested.style.height = f.h + "px";
-        if (drag.repaintNested) {
-          paint(nested, ch.refId, 1, activeId !== canvasId ? activeId : null);
-          drag.repaintNested = false;
+        var o = drag.orig;
+        if (drag.proportionalCells && drag.mode === "resize" && o) {
+          // Live preview: CSS scale of original content (no grid reflow while dragging).
+          var rw = f.w / Math.max(1, o.w);
+          var rh = f.h / Math.max(1, o.h);
+          nested.style.width = o.w + "px";
+          nested.style.height = o.h + "px";
+          nested.style.transformOrigin = "0 0";
+          nested.style.transform = "scale(" + rw + ", " + rh + ")";
+          cell.style.overflow = "hidden";
+          if (drag.repaintNested) {
+            paint(nested, ch.refId, 1, activeId !== canvasId ? activeId : null);
+            drag.repaintNested = false;
+          }
+        } else {
+          nested.style.transform = "";
+          nested.style.transformOrigin = "";
+          nested.style.width = f.w + "px";
+          nested.style.height = f.h + "px";
+          cell.style.overflow = "";
+          if (drag.repaintNested) {
+            paint(nested, ch.refId, 1, activeId !== canvasId ? activeId : null);
+            drag.repaintNested = false;
+          }
         }
       }
     }
@@ -2910,6 +3002,10 @@
         x0: (e.clientX - local.left) * local.sx,
         y0: (e.clientY - local.top) * local.sy,
         orig: { x: fr.x, y: fr.y, w: fr.w, h: fr.h },
+        origSettings: (handle && ch.type === "layout" && ch.refId)
+          ? snapshotLayoutCellSettings(ch.refId)
+          : null,
+        proportionalCells: false,
         undoPushed: true,
         cell: liveCell,
         local: local,
@@ -2960,8 +3056,11 @@
       if (w < 24) { if (hd.indexOf("w") >= 0) x = o.x + o.w - 24; w = 24; }
       if (h < 24) { if (hd.indexOf("n") >= 0) y = o.y + o.h - 24; h = 24; }
     }
-    var lockAspect = e.shiftKey && drag.mode === "resize" &&
-      ch.type === "image" && isCanvas(drag.layoutId);
+    // Hold Shift to keep aspect (images & layouts).
+    var lockAspect = e.shiftKey && drag.mode === "resize" && (
+      (ch.type === "image" && isCanvas(drag.layoutId)) ||
+      (ch.type === "layout" && !!layouts[ch.refId])
+    );
     if (snapEnabled && !lockAspect) {
       var guides = collectSnapGuides(drag.layoutId, drag.index);
       var snapped = drag.mode === "move"
@@ -2984,11 +3083,31 @@
     ch.frame.w = Math.round(w);
     ch.frame.h = Math.round(h);
     if (ch.type === "layout" && layouts[ch.refId]) {
-      layouts[ch.refId].settings.width = ch.frame.w;
-      layouts[ch.refId].settings.height = ch.frame.h;
       if (drag.mode === "resize") {
-        reflowIfLayout(ch.refId);
-        drag.repaintNested = true;
+        var proportionalCells = !!(e.ctrlKey || e.metaKey) && !!drag.origSettings;
+        var entered = proportionalCells && !drag.proportionalCells;
+        var exited = !proportionalCells && drag.proportionalCells;
+        drag.proportionalCells = proportionalCells;
+
+        if (proportionalCells) {
+          // While dragging: keep original grid in the model; preview via CSS scale.
+          restoreLayoutCellSettings(drag.origSettings);
+          layouts[ch.refId].settings.width = o.w;
+          layouts[ch.refId].settings.height = o.h;
+          if (entered) {
+            reflowLayoutTree(ch.refId);
+            drag.repaintNested = true;
+          }
+        } else {
+          layouts[ch.refId].settings.width = ch.frame.w;
+          layouts[ch.refId].settings.height = ch.frame.h;
+          if (exited && drag.origSettings) restoreLayoutCellSettings(drag.origSettings);
+          reflowIfLayout(ch.refId);
+          drag.repaintNested = true;
+        }
+      } else {
+        layouts[ch.refId].settings.width = ch.frame.w;
+        layouts[ch.refId].settings.height = ch.frame.h;
       }
     }
     scheduleDragVisual();
@@ -3011,8 +3130,27 @@
       fr.x !== o.x || fr.y !== o.y || fr.w !== o.w || fr.h !== o.h
     ));
     if (!changed && finished.undoPushed && undoStack.length) undoStack.pop();
-    if (finished.mode === "resize" && pch && pch.type === "layout") reflowIfLayout(pch.refId);
-    if (pch && pch.type === "layout" && layouts[pch.refId] && activeId === pch.refId) {
+    if (finished.mode === "resize" && pch && pch.type === "layout" && layouts[pch.refId]) {
+      if (finished.proportionalCells && finished.origSettings && fr && o) {
+        // Commit: layout size + proportional cell px (matches the CSS-scale preview).
+        layouts[pch.refId].settings.width = fr.w;
+        layouts[pch.refId].settings.height = fr.h;
+        applyProportionalCellSizes(
+          pch.refId,
+          fr.w / Math.max(1, o.w),
+          fr.h / Math.max(1, o.h),
+          finished.origSettings
+        );
+      } else {
+        if (finished.origSettings) restoreLayoutCellSettings(finished.origSettings);
+        layouts[pch.refId].settings.width = fr ? fr.w : layouts[pch.refId].settings.width;
+        layouts[pch.refId].settings.height = fr ? fr.h : layouts[pch.refId].settings.height;
+        reflowIfLayout(pch.refId);
+      }
+      if (activeId === pch.refId || (finished.origSettings && finished.origSettings[activeId])) {
+        readForm();
+      }
+    } else if (pch && pch.type === "layout" && layouts[pch.refId] && activeId === pch.refId) {
       el.w.value = pch.frame.w;
       el.h.value = pch.frame.h;
     }
