@@ -73,14 +73,15 @@
 
   var FOLDER_WATCH_LS = "grid-designer-folder-watch";
   var FOLDER_SEEN_LS = "grid-designer-folder-seen";
+  var FOLDER_HANDLES_IDB = "watchFolders";
+  var FOLDER_HANDLE_IDB_LEGACY = "watchFolder";
   var SHOW_TREE_THUMBS_LS = "grid-designer-show-tree-thumbs";
   var FOLDER_POLL_MS = 1000;
   var showTreeThumbs = true;
-  var folderHandle = null;
+  /** @type {{ enabled: boolean, rules: Array<{id:string, folderName:string, targetLayoutId:string|null, handle: any}> }} */
   var folderWatch = {
     enabled: false,
-    targetLayoutId: null,
-    folderName: "",
+    rules: [],
   };
   var folderSeenKeys = {};
   var folderPollTimer = null;
@@ -88,12 +89,10 @@
   var folderObserver = null;
   var folderScanDebounce = null;
   var folderPendingStable = {};
+  /** Modal draft mirrors folderWatch.rules (+ optional clearHandle per rule). */
   var folderModalDraft = {
     enabled: false,
-    targetLayoutId: null,
-    folderName: "",
-    handle: null,
-    clearHandle: false,
+    rules: [],
   };
 
   var el = {
@@ -222,7 +221,19 @@
       bgColor: L.bgColor || "#000000",
       bgAlpha: a,
       transparentBg: a <= 0,
+      visible: L.visible !== false,
     };
+  }
+
+  function isLayoutVisible(id) {
+    var L = layouts[id];
+    return !!(L && L.visible !== false);
+  }
+
+  function setLayoutVisible(id, on) {
+    var L = layouts[id];
+    if (!L || isCanvas(id)) return;
+    L.visible = !!on;
   }
 
   function makeLayout(name, parentId) {
@@ -235,6 +246,7 @@
       transparentBg: true,
       bgColor: "#000000",
       bgAlpha: 0,
+      visible: true,
       children: [],
     };
     return id;
@@ -250,10 +262,10 @@
     };
   }
 
-  /** Canvas-direct images + any layout frame are mouse-editable in preview */
+  /** Canvas-direct images + any visible layout frame are mouse-editable in preview */
   function isInteractiveChild(parentId, ch) {
     if (!ch) return false;
-    if (ch.type === "layout") return true;
+    if (ch.type === "layout") return isLayoutVisible(ch.refId);
     return ch.type === "image" && parentId === canvasId;
   }
 
@@ -1062,8 +1074,10 @@
           var layActive = activeId === L.id && selectedChild < 0;
           var hasKids = L.children.length > 0;
           var isClosed = !!collapsed[L.id];
+          var layVisible = isLayoutVisible(L.id);
           li.className = "tree-item tree-layout" + (layActive ? " active" : "") +
-            (isClosed ? " collapsed" : "");
+            (isClosed ? " collapsed" : "") +
+            (layVisible ? "" : " is-hidden");
           li.dataset.layoutId = L.id;
 
           var twist = document.createElement("button");
@@ -1079,6 +1093,28 @@
             if (collapsed[L.id]) delete collapsed[L.id];
             else collapsed[L.id] = true;
             renderTree();
+          };
+
+          var eye = document.createElement("button");
+          eye.type = "button";
+          eye.className = "tree-vis" + (layVisible ? "" : " is-off");
+          eye.title = layVisible ? t("layoutHide") : t("layoutShow");
+          eye.setAttribute("aria-label", eye.title);
+          eye.setAttribute("aria-pressed", layVisible ? "true" : "false");
+          var eyeImg = document.createElement("img");
+          eyeImg.src = layVisible ? "icons/eye.svg" : "icons/eye-off.svg";
+          eyeImg.alt = "";
+          eyeImg.width = 16;
+          eyeImg.height = 16;
+          eyeImg.draggable = false;
+          eye.appendChild(eyeImg);
+          eye.onclick = function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            pushUndo();
+            setLayoutVisible(L.id, !isLayoutVisible(L.id));
+            refresh();
+            requestAutoExport(false);
           };
 
           var nm = document.createElement("div");
@@ -1106,7 +1142,7 @@
           meta.className = "muted";
           meta.textContent = String(L.children.length);
 
-          li.append(pad, twist, nm, meta);
+          li.append(pad, twist, eye, nm, meta);
           li.onclick = function () {
             renameClick = null;
             selectLayout(L.id);
@@ -1165,6 +1201,7 @@
     childPaintOrder(L).forEach(function (i) {
       var ch = L.children[i];
       var f = ch.frame;
+      if (ch.type === "layout" && ch.refId && !isLayoutVisible(ch.refId)) return;
       var interactive = isInteractiveChild(layoutId, ch);
       var cell = document.createElement("div");
       cell.className = "grid-cell" + (interactive ? " interactive" : "");
@@ -1239,6 +1276,7 @@
     childPaintOrder(L).forEach(function (i) {
       var ch = L.children[i];
       var f = ch.frame;
+      if (ch.type === "layout" && ch.refId && !isLayoutVisible(ch.refId)) return;
       var x = ox + f.x;
       var y = oy + f.y;
       if (ch.type === "image" && images[ch.refId] && images[ch.refId].img) {
@@ -1538,19 +1576,40 @@
     return typeof window.showDirectoryPicker === "function";
   }
 
-  function folderFileKey(file) {
-    // Name-only: size/mtime change while a file is still being written,
+  function folderFileKey(ruleId, file) {
+    // Name scoped by rule: size/mtime change while a file is still being written,
     // which previously caused the same image to be imported twice.
-    return file.name;
+    return String(ruleId || "") + "|" + file.name;
   }
 
   function normalizeFolderSeen(raw) {
     var out = {};
     Object.keys(raw || {}).forEach(function (k) {
-      var name = String(k).split("|")[0];
-      if (name) out[name] = true;
+      var key = String(k);
+      if (!key) return;
+      // Legacy unscoped name → keep as-is until migrated against a rule id.
+      out[key] = true;
     });
     return out;
+  }
+
+  function newFolderWatchRuleId() {
+    return uid("fw");
+  }
+
+  function cloneFolderWatchRules(rules) {
+    return (rules || []).map(function (r) {
+      return {
+        id: r.id || newFolderWatchRuleId(),
+        folderName: r.folderName || "",
+        targetLayoutId: r.targetLayoutId || null,
+        handle: r.handle || null,
+      };
+    });
+  }
+
+  function activeFolderWatchRules(src) {
+    return (src || []).filter(function (r) { return !!(r && r.handle); });
   }
 
   function loadFolderWatchSettings() {
@@ -1559,13 +1618,33 @@
       if (raw) {
         var parsed = JSON.parse(raw);
         folderWatch.enabled = !!parsed.enabled;
-        folderWatch.targetLayoutId = parsed.targetLayoutId || null;
-        folderWatch.folderName = parsed.folderName || "";
+        if (Array.isArray(parsed.rules)) {
+          folderWatch.rules = parsed.rules.map(function (r) {
+            return {
+              id: r.id || newFolderWatchRuleId(),
+              folderName: r.folderName || "",
+              targetLayoutId: r.targetLayoutId || null,
+              handle: null,
+            };
+          });
+        } else if (parsed.folderName || parsed.targetLayoutId) {
+          // Migrate single-folder settings.
+          folderWatch.rules = [{
+            id: newFolderWatchRuleId(),
+            folderName: parsed.folderName || "",
+            targetLayoutId: parsed.targetLayoutId || null,
+            handle: null,
+          }];
+        } else {
+          folderWatch.rules = [];
+        }
       } else {
         folderWatch.enabled = false;
+        folderWatch.rules = [];
       }
     } catch (e) {
       folderWatch.enabled = false;
+      folderWatch.rules = [];
     }
     try {
       var seen = localStorage.getItem(FOLDER_SEEN_LS);
@@ -1579,8 +1658,13 @@
     try {
       localStorage.setItem(FOLDER_WATCH_LS, JSON.stringify({
         enabled: !!folderWatch.enabled,
-        targetLayoutId: folderWatch.targetLayoutId,
-        folderName: folderWatch.folderName || "",
+        rules: folderWatch.rules.map(function (r) {
+          return {
+            id: r.id,
+            folderName: r.folderName || "",
+            targetLayoutId: r.targetLayoutId || null,
+          };
+        }),
       }));
     } catch (e) { /* ignore */ }
   }
@@ -1591,8 +1675,17 @@
     } catch (e) { /* ignore */ }
   }
 
-  function resolveFolderWatchTargetId() {
-    var id = folderWatch.targetLayoutId;
+  function persistFolderHandles() {
+    var map = {};
+    folderWatch.rules.forEach(function (r) {
+      if (r.id && r.handle) map[r.id] = r.handle;
+    });
+    return idb("put", FOLDER_HANDLES_IDB, map).catch(function () { return null; })
+      .then(function () { return idb("del", FOLDER_HANDLE_IDB_LEGACY).catch(function () { return null; }); });
+  }
+
+  function resolveFolderWatchTargetId(rule) {
+    var id = rule && rule.targetLayoutId;
     if (id && layouts[id]) return id;
     return canvasId;
   }
@@ -1628,7 +1721,7 @@
   }
 
   function updateFolderWatchBtn() {
-    var on = !!(folderWatch.enabled && folderHandle);
+    var on = !!(folderWatch.enabled && activeFolderWatchRules(folderWatch.rules).length);
     var addBtn = $("addMenuBtn");
     if (addBtn) {
       addBtn.classList.toggle("folder-watch-on", on);
@@ -1643,16 +1736,103 @@
     else item.setAttribute("data-i18n", "folderWatch");
   }
 
-  function updateFolderWatchFolderLabel(name) {
-    var lab = $("folderWatchFolderLabel");
-    if (!lab) return;
-    if (name) {
-      lab.removeAttribute("data-i18n");
-      lab.textContent = name;
-    } else {
-      lab.setAttribute("data-i18n", "folderWatchNoFolder");
-      lab.textContent = t("folderWatchNoFolder");
+  function findDraftRule(ruleId) {
+    for (var i = 0; i < folderModalDraft.rules.length; i++) {
+      if (folderModalDraft.rules[i].id === ruleId) return folderModalDraft.rules[i];
     }
+    return null;
+  }
+
+  function renderFolderWatchRuleList() {
+    var list = $("folderWatchRuleList");
+    if (!list) return;
+    list.replaceChildren();
+    if (!folderModalDraft.rules.length) {
+      var empty = document.createElement("p");
+      empty.className = "folder-watch-empty";
+      empty.setAttribute("data-i18n", "folderWatchEmpty");
+      empty.textContent = t("folderWatchEmpty");
+      list.appendChild(empty);
+      return;
+    }
+    var canPick = supportsFolderWatch();
+    folderModalDraft.rules.forEach(function (rule) {
+      var li = document.createElement("li");
+      li.className = "folder-watch-rule";
+      li.dataset.ruleId = rule.id;
+
+      var main = document.createElement("div");
+      main.className = "folder-watch-rule-main";
+
+      var folderRow = document.createElement("div");
+      folderRow.className = "folder-watch-rule-folder";
+
+      var pickBtn = document.createElement("button");
+      pickBtn.type = "button";
+      pickBtn.setAttribute("data-fw-action", "pick");
+      pickBtn.setAttribute("data-rule-id", rule.id);
+      pickBtn.setAttribute("data-i18n", "folderWatchPick");
+      pickBtn.textContent = t("folderWatchPick");
+      pickBtn.disabled = !canPick;
+
+      var clearBtn = document.createElement("button");
+      clearBtn.type = "button";
+      clearBtn.setAttribute("data-fw-action", "clear");
+      clearBtn.setAttribute("data-rule-id", rule.id);
+      clearBtn.setAttribute("data-i18n", "folderWatchClear");
+      clearBtn.textContent = t("folderWatchClear");
+
+      var path = document.createElement("p");
+      path.className = "muted modal-path";
+      if (rule.folderName) {
+        path.textContent = rule.folderName;
+      } else {
+        path.setAttribute("data-i18n", "folderWatchNoFolder");
+        path.textContent = t("folderWatchNoFolder");
+      }
+
+      folderRow.append(pickBtn, clearBtn, path);
+
+      var targetLab = document.createElement("label");
+      targetLab.setAttribute("data-i18n", "folderWatchTarget");
+      targetLab.textContent = t("folderWatchTarget");
+
+      var sel = document.createElement("select");
+      sel.setAttribute("data-fw-action", "target");
+      sel.setAttribute("data-rule-id", rule.id);
+      fillFolderWatchTargetSelect(sel, rule.targetLayoutId || canvasId);
+
+      main.append(folderRow, targetLab, sel);
+
+      var removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "danger folder-watch-rule-remove";
+      removeBtn.setAttribute("data-fw-action", "remove");
+      removeBtn.setAttribute("data-rule-id", rule.id);
+      removeBtn.setAttribute("data-i18n-title", "folderWatchRemoveRule");
+      removeBtn.title = t("folderWatchRemoveRule");
+      removeBtn.textContent = "−";
+
+      li.append(main, removeBtn);
+      list.appendChild(li);
+    });
+  }
+
+  function addFolderWatchDraftRule() {
+    folderModalDraft.rules.push({
+      id: newFolderWatchRuleId(),
+      folderName: "",
+      targetLayoutId: canvasId,
+      handle: null,
+    });
+    renderFolderWatchRuleList();
+  }
+
+  function removeFolderWatchDraftRule(ruleId) {
+    folderModalDraft.rules = folderModalDraft.rules.filter(function (r) {
+      return r.id !== ruleId;
+    });
+    renderFolderWatchRuleList();
   }
 
   function stopFolderWatch() {
@@ -1707,30 +1887,35 @@
     return next();
   }
 
-  function seedFolderSeenFromHandle(handle) {
+  function seedFolderSeenFromHandle(ruleId, handle) {
     return iterateFolderImageFiles(handle, function (file) {
-      folderSeenKeys[folderFileKey(file)] = true;
+      folderSeenKeys[folderFileKey(ruleId, file)] = true;
     }).then(function () {
       persistFolderSeen();
     });
   }
 
-  function scanWatchFolder() {
-    if (!folderWatch.enabled || !folderHandle || !canvasId || folderScanBusy) return;
-    folderScanBusy = true;
-    ensureFolderReadPermission(folderHandle, false).then(function (ok) {
-      if (!ok) {
-        folderScanBusy = false;
-        return;
-      }
+  function migrateLegacySeenKeysForRule(ruleId) {
+    if (!ruleId) return;
+    Object.keys(folderSeenKeys).forEach(function (k) {
+      if (k.indexOf("|") >= 0) return;
+      folderSeenKeys[ruleId + "|" + k] = true;
+      delete folderSeenKeys[k];
+    });
+    persistFolderSeen();
+  }
+
+  function scanOneWatchRule(rule) {
+    if (!rule || !rule.handle) return Promise.resolve();
+    return ensureFolderReadPermission(rule.handle, false).then(function (ok) {
+      if (!ok) return;
       var fresh = [];
       var alive = {};
-      return iterateFolderImageFiles(folderHandle, function (file) {
-        var key = folderFileKey(file);
+      return iterateFolderImageFiles(rule.handle, function (file) {
+        var key = folderFileKey(rule.id, file);
         alive[key] = true;
         if (folderSeenKeys[key]) return;
 
-        // Wait until size/mtime stay unchanged across scans (file write finished).
         var prev = folderPendingStable[key];
         if (!prev || prev.size !== file.size || prev.lastModified !== file.lastModified) {
           folderPendingStable[key] = {
@@ -1750,22 +1935,33 @@
         fresh.push(file);
       }).then(function () {
         Object.keys(folderPendingStable).forEach(function (k) {
-          if (!alive[k]) delete folderPendingStable[k];
+          if (k.indexOf(String(rule.id) + "|") === 0 && !alive[k]) delete folderPendingStable[k];
         });
         if (!fresh.length) return;
         persistFolderSeen();
-        addFiles(fresh, resolveFolderWatchTargetId());
+        addFiles(fresh, resolveFolderWatchTargetId(rule));
       });
-    }).catch(function () {
-      /* ignore scan errors */
-    }).then(function () {
+    });
+  }
+
+  function scanWatchFolder() {
+    if (!folderWatch.enabled || !canvasId || folderScanBusy) return;
+    var rules = activeFolderWatchRules(folderWatch.rules);
+    if (!rules.length) return;
+    folderScanBusy = true;
+    var chain = Promise.resolve();
+    rules.forEach(function (rule) {
+      chain = chain.then(function () { return scanOneWatchRule(rule); });
+    });
+    chain.catch(function () { /* ignore scan errors */ }).then(function () {
       folderScanBusy = false;
     });
   }
 
   function startFolderWatch() {
     stopFolderWatch();
-    if (!folderWatch.enabled || !folderHandle) {
+    var rules = activeFolderWatchRules(folderWatch.rules);
+    if (!folderWatch.enabled || !rules.length) {
       updateFolderWatchBtn();
       return;
     }
@@ -1775,12 +1971,13 @@
         folderObserver = new FileSystemObserver(function () {
           scheduleFolderScan();
         });
-        folderObserver.observe(folderHandle, { recursive: false });
+        rules.forEach(function (rule) {
+          try { folderObserver.observe(rule.handle, { recursive: false }); } catch (eObs) { /* ignore */ }
+        });
       } catch (e) {
         folderObserver = null;
       }
     }
-    // Polling is a backup; observer + debounce cover most updates.
     folderPollTimer = setInterval(scheduleFolderScan, FOLDER_POLL_MS);
     scheduleFolderScan();
   }
@@ -1789,15 +1986,19 @@
     var modal = $("folderWatchModal");
     if (!modal) return;
     folderModalDraft.enabled = !!folderWatch.enabled;
-    folderModalDraft.targetLayoutId = folderWatch.targetLayoutId || canvasId;
-    folderModalDraft.folderName = folderWatch.folderName || (folderHandle && folderHandle.name) || "";
-    folderModalDraft.handle = folderHandle;
-    folderModalDraft.clearHandle = false;
+    folderModalDraft.rules = cloneFolderWatchRules(folderWatch.rules);
+    if (!folderModalDraft.rules.length) {
+      folderModalDraft.rules.push({
+        id: newFolderWatchRuleId(),
+        folderName: "",
+        targetLayoutId: canvasId,
+        handle: null,
+      });
+    }
 
     var en = $("folderWatchEnabled");
     if (en) en.checked = folderModalDraft.enabled;
-    fillFolderWatchTargetSelect($("folderWatchTarget"), folderModalDraft.targetLayoutId);
-    updateFolderWatchFolderLabel(folderModalDraft.folderName);
+    renderFolderWatchRuleList();
 
     var hint = $("folderWatchSupportHint");
     if (hint) {
@@ -1810,8 +2011,6 @@
         hint.textContent = "";
       }
     }
-    var pickBtn = $("folderWatchPickBtn");
-    if (pickBtn) pickBtn.disabled = !supportsFolderWatch();
 
     modal.hidden = false;
   }
@@ -1823,11 +2022,11 @@
 
   function saveFolderWatchModal() {
     var en = $("folderWatchEnabled");
-    var target = $("folderWatchTarget");
     var wantEnable = !!(en && en.checked);
-    var targetId = target && target.value ? target.value : canvasId;
+    var draftRules = cloneFolderWatchRules(folderModalDraft.rules);
+    var ready = activeFolderWatchRules(draftRules);
 
-    if (wantEnable && !folderModalDraft.handle && !folderHandle) {
+    if (wantEnable && !ready.length) {
       status(t("folderWatchNeedFolder"), "err");
       return;
     }
@@ -1836,38 +2035,53 @@
       return;
     }
 
-    var prevHandle = folderHandle;
-    if (folderModalDraft.clearHandle) {
-      folderHandle = null;
-      folderWatch.folderName = "";
-      idb("del", "watchFolder").catch(function () {});
-      folderSeenKeys = {};
-      persistFolderSeen();
-    } else if (folderModalDraft.handle) {
-      folderHandle = folderModalDraft.handle;
-      folderWatch.folderName = folderHandle.name || folderModalDraft.folderName || "";
-    }
+    var prevHandleById = {};
+    folderWatch.rules.forEach(function (r) {
+      prevHandleById[r.id] = r.handle || null;
+    });
 
-    folderWatch.enabled = wantEnable && !!folderHandle;
-    folderWatch.targetLayoutId = targetId && layouts[targetId] ? targetId : canvasId;
+    folderWatch.rules = draftRules.map(function (r) {
+      return {
+        id: r.id,
+        folderName: r.handle ? (r.handle.name || r.folderName || "") : (r.folderName || ""),
+        targetLayoutId: r.targetLayoutId && layouts[r.targetLayoutId] ? r.targetLayoutId : canvasId,
+        handle: r.handle || null,
+      };
+    });
+    folderWatch.enabled = wantEnable && !!activeFolderWatchRules(folderWatch.rules).length;
     persistFolderWatchSettings();
 
-    var finish = function () {
-      if (folderHandle) {
-        return idb("put", "watchFolder", folderHandle).catch(function () { return null; });
+    var seedChain = Promise.resolve();
+    folderWatch.rules.forEach(function (rule) {
+      if (!rule.handle) return;
+      var prevHandle = prevHandleById[rule.id] || null;
+      var folderChanged = rule.handle !== prevHandle;
+      var hasSeen = Object.keys(folderSeenKeys).some(function (k) {
+        return k.indexOf(String(rule.id) + "|") === 0;
+      });
+      if (folderChanged || !hasSeen) {
+        if (folderChanged) {
+          Object.keys(folderSeenKeys).forEach(function (k) {
+            if (k.indexOf(String(rule.id) + "|") === 0) delete folderSeenKeys[k];
+          });
+        }
+        seedChain = seedChain.then(function () {
+          return seedFolderSeenFromHandle(rule.id, rule.handle);
+        });
       }
-      return Promise.resolve();
-    };
+    });
+    Object.keys(folderSeenKeys).forEach(function (k) {
+      var sep = k.indexOf("|");
+      if (sep < 0) return;
+      var rid = k.slice(0, sep);
+      var still = folderWatch.rules.some(function (r) { return r.id === rid; });
+      if (!still) delete folderSeenKeys[k];
+    });
+    persistFolderSeen();
 
-    var afterSeed = Promise.resolve();
-    if (folderWatch.enabled && folderHandle && folderHandle !== prevHandle) {
-      folderSeenKeys = {};
-      afterSeed = seedFolderSeenFromHandle(folderHandle);
-    } else if (folderWatch.enabled && folderHandle && !Object.keys(folderSeenKeys).length) {
-      afterSeed = seedFolderSeenFromHandle(folderHandle);
-    }
-
-    afterSeed.then(finish).then(function () {
+    seedChain.then(function () {
+      return persistFolderHandles();
+    }).then(function () {
       if (folderWatch.enabled) startFolderWatch();
       else stopFolderWatch();
       updateFolderWatchBtn();
@@ -1876,49 +2090,72 @@
     });
   }
 
-  function pickWatchFolder() {
+  function pickWatchFolderForRule(ruleId) {
     if (!supportsFolderWatch()) {
       status(t("folderWatchUnsupported"), "err");
       return;
     }
+    var rule = findDraftRule(ruleId);
+    if (!rule) return;
     window.showDirectoryPicker({ mode: "read" }).then(function (handle) {
-      folderModalDraft.handle = handle;
-      folderModalDraft.clearHandle = false;
-      folderModalDraft.folderName = handle.name || "";
-      updateFolderWatchFolderLabel(folderModalDraft.folderName);
+      rule.handle = handle;
+      rule.folderName = handle.name || "";
+      renderFolderWatchRuleList();
     }).catch(function (e) {
       if (!e || e.name !== "AbortError") status(String((e && e.message) || e), "err");
     });
   }
 
-  function clearWatchFolderDraft() {
-    folderModalDraft.handle = null;
-    folderModalDraft.clearHandle = true;
-    folderModalDraft.folderName = "";
-    updateFolderWatchFolderLabel("");
+  function clearWatchFolderForRule(ruleId) {
+    var rule = findDraftRule(ruleId);
+    if (!rule) return;
+    rule.handle = null;
+    rule.folderName = "";
+    renderFolderWatchRuleList();
   }
 
   function restoreFolderWatchOnBoot() {
     loadFolderWatchSettings();
     updateFolderWatchBtn();
     if (!supportsFolderWatch()) return;
-    idb("get", "watchFolder").then(function (h) {
-      folderHandle = h || null;
-      if (folderHandle && !folderWatch.folderName) {
-        folderWatch.folderName = folderHandle.name || "";
-        persistFolderWatchSettings();
-      }
-      updateFolderWatchBtn();
-      if (!folderWatch.enabled || !folderHandle) return;
-      return ensureFolderReadPermission(folderHandle, true).then(function (ok) {
-        if (!ok) {
-          status(t("folderWatchPermission"), "err");
-          return;
+
+    idb("get", FOLDER_HANDLES_IDB).then(function (map) {
+      map = map || {};
+      return idb("get", FOLDER_HANDLE_IDB_LEGACY).then(function (legacy) {
+        if (legacy && folderWatch.rules.length === 1 && !folderWatch.rules[0].handle) {
+          folderWatch.rules[0].handle = legacy;
+          if (!folderWatch.rules[0].folderName) {
+            folderWatch.rules[0].folderName = legacy.name || "";
+          }
+          migrateLegacySeenKeysForRule(folderWatch.rules[0].id);
         }
-        var seed = Object.keys(folderSeenKeys).length
-          ? Promise.resolve()
-          : seedFolderSeenFromHandle(folderHandle);
-        return seed.then(function () { startFolderWatch(); });
+        folderWatch.rules.forEach(function (rule) {
+          if (map[rule.id]) {
+            rule.handle = map[rule.id];
+            if (!rule.folderName && rule.handle) rule.folderName = rule.handle.name || "";
+          }
+        });
+        persistFolderWatchSettings();
+        updateFolderWatchBtn();
+        if (!folderWatch.enabled || !activeFolderWatchRules(folderWatch.rules).length) return;
+
+        var chain = Promise.resolve();
+        activeFolderWatchRules(folderWatch.rules).forEach(function (rule) {
+          chain = chain.then(function () {
+            return ensureFolderReadPermission(rule.handle, true).then(function (ok) {
+              if (!ok) {
+                status(t("folderWatchPermission"), "err");
+                return;
+              }
+              var hasSeen = Object.keys(folderSeenKeys).some(function (k) {
+                return k.indexOf(String(rule.id) + "|") === 0;
+              });
+              if (hasSeen) return;
+              return seedFolderSeenFromHandle(rule.id, rule.handle);
+            });
+          });
+        });
+        return chain.then(function () { startFolderWatch(); });
       });
     }).catch(function () {});
   }
@@ -2362,6 +2599,7 @@
         maxZ: maxZ,
         layouts: layoutPayload,
         images: imagePayload,
+        folderWatch: serializeFolderWatchForProject(),
       };
     });
   }
@@ -2421,6 +2659,92 @@
     });
   }
 
+  function serializeFolderWatchForProject() {
+    return {
+      enabled: !!folderWatch.enabled,
+      rules: folderWatch.rules.map(function (r) {
+        return {
+          id: r.id,
+          folderName: r.folderName || (r.handle && r.handle.name) || "",
+          targetLayoutId: r.targetLayoutId || null,
+        };
+      }),
+    };
+  }
+
+  function applyFolderWatchFromProject(fw) {
+    if (!fw || typeof fw !== "object") return Promise.resolve();
+    stopFolderWatch();
+    folderWatch.enabled = !!fw.enabled;
+    folderWatch.rules = (Array.isArray(fw.rules) ? fw.rules : []).map(function (r) {
+      var targetId = r && r.targetLayoutId;
+      return {
+        id: (r && r.id) || newFolderWatchRuleId(),
+        folderName: (r && r.folderName) || "",
+        targetLayoutId: targetId && layouts[targetId] ? targetId : canvasId,
+        handle: null,
+      };
+    });
+    persistFolderWatchSettings();
+    updateFolderWatchBtn();
+
+    if (!supportsFolderWatch()) return Promise.resolve();
+
+    return idb("get", FOLDER_HANDLES_IDB).then(function (map) {
+      map = map || {};
+      return idb("get", FOLDER_HANDLE_IDB_LEGACY).then(function (legacy) {
+        var byName = {};
+        Object.keys(map).forEach(function (id) {
+          var h = map[id];
+          if (h && h.name) byName[h.name] = h;
+        });
+        if (legacy && legacy.name) byName[legacy.name] = byName[legacy.name] || legacy;
+
+        folderWatch.rules.forEach(function (rule) {
+          if (map[rule.id]) rule.handle = map[rule.id];
+          else if (rule.folderName && byName[rule.folderName]) rule.handle = byName[rule.folderName];
+          if (rule.handle && !rule.folderName) rule.folderName = rule.handle.name || "";
+        });
+
+        return persistFolderHandles().then(function () {
+          persistFolderWatchSettings();
+          updateFolderWatchBtn();
+          var missing = folderWatch.rules.some(function (r) {
+            return !r.handle && r.folderName;
+          });
+          var active = activeFolderWatchRules(folderWatch.rules);
+          if (!folderWatch.enabled || !active.length) {
+            stopFolderWatch();
+            return (folderWatch.enabled && folderWatch.rules.length) || missing ? "relink" : null;
+          }
+          var note = missing ? "relink" : null;
+          var chain = Promise.resolve();
+          active.forEach(function (rule) {
+            chain = chain.then(function () {
+              return ensureFolderReadPermission(rule.handle, true).then(function (ok) {
+                if (!ok) {
+                  note = "permission";
+                  return;
+                }
+                var hasSeen = Object.keys(folderSeenKeys).some(function (k) {
+                  return k.indexOf(String(rule.id) + "|") === 0;
+                });
+                if (!hasSeen) return seedFolderSeenFromHandle(rule.id, rule.handle);
+              });
+            });
+          });
+          return chain.then(function () {
+            startFolderWatch();
+            return note;
+          });
+        });
+      });
+    }).catch(function () {
+      updateFolderWatchBtn();
+      return null;
+    });
+  }
+
   function importProject(data) {
     validateProject(data);
     var nextLayouts = cloneLayoutsMap(data.layouts);
@@ -2459,6 +2783,7 @@
       clearImageSel();
       readForm();
       refresh();
+      return applyFolderWatchFromProject(data.folderWatch);
     });
   }
 
@@ -2467,6 +2792,7 @@
     status(includeImages ? t("savingWithImages") : t("savingStructure"));
     buildProject(includeImages).then(function (project) {
       downloadJson(project, "grid-designer-structure.json");
+      persistFolderHandles().catch(function () {});
       var nLay = Object.keys(project.layouts).length;
       var nImg = Object.keys(project.images).length;
       if (includeImages) {
@@ -2494,10 +2820,12 @@
           return;
         }
         status(t("loading"));
-        importProject(data).then(function () {
+        importProject(data).then(function (fwNote) {
           var nLay = Object.keys(layouts).length;
           var nImg = Object.keys(images).length;
           status(t("loaded", { nLay: nLay, nImg: nImg }), "ok");
+          if (fwNote === "permission") status(t("folderWatchPermission"), "err");
+          else if (fwNote === "relink") status(t("folderWatchRelink"), "err");
         }).catch(function (e) {
           status(String((e && e.message) || e), "err");
         });
@@ -3256,11 +3584,28 @@
       openFolderWatchModal();
     };
   }
-  if ($("folderWatchPickBtn")) {
-    $("folderWatchPickBtn").onclick = pickWatchFolder;
+  if ($("folderWatchAddRuleBtn")) {
+    $("folderWatchAddRuleBtn").onclick = function () {
+      addFolderWatchDraftRule();
+    };
   }
-  if ($("folderWatchClearBtn")) {
-    $("folderWatchClearBtn").onclick = clearWatchFolderDraft;
+  if ($("folderWatchRuleList")) {
+    $("folderWatchRuleList").addEventListener("click", function (e) {
+      var btn = e.target.closest && e.target.closest("[data-fw-action]");
+      if (!btn) return;
+      var ruleId = btn.getAttribute("data-rule-id");
+      var action = btn.getAttribute("data-fw-action");
+      if (action === "pick") pickWatchFolderForRule(ruleId);
+      else if (action === "clear") clearWatchFolderForRule(ruleId);
+      else if (action === "remove") removeFolderWatchDraftRule(ruleId);
+    });
+    $("folderWatchRuleList").addEventListener("change", function (e) {
+      var sel = e.target;
+      if (!sel || sel.tagName !== "SELECT") return;
+      if (sel.getAttribute("data-fw-action") !== "target") return;
+      var rule = findDraftRule(sel.getAttribute("data-rule-id"));
+      if (rule) rule.targetLayoutId = sel.value;
+    });
   }
   if ($("folderWatchSaveBtn")) {
     $("folderWatchSaveBtn").onclick = saveFolderWatchModal;
@@ -3494,12 +3839,7 @@
     updateFolderWatchBtn();
     var modal = $("folderWatchModal");
     if (modal && !modal.hidden) {
-      fillFolderWatchTargetSelect(
-        $("folderWatchTarget"),
-        ($("folderWatchTarget") && $("folderWatchTarget").value) || folderWatch.targetLayoutId || canvasId
-      );
-      var draftName = folderModalDraft.folderName || (folderModalDraft.handle && folderModalDraft.handle.name) || "";
-      updateFolderWatchFolderLabel(draftName);
+      renderFolderWatchRuleList();
     }
     var statusKey = I18N.findKeyByText(el.status.textContent);
     if (statusKey) {

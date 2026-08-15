@@ -687,6 +687,84 @@ h2 {
   word-break: break-all;
 }
 
+.folder-watch-rules-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.folder-watch-rules-head button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.folder-watch-rule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(42vh, 320px);
+  overflow: auto;
+}
+
+.folder-watch-rule {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+
+.folder-watch-rule-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.folder-watch-rule-folder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.folder-watch-rule-folder .modal-path {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.folder-watch-rule select {
+  width: 100%;
+}
+
+.folder-watch-rule-remove {
+  align-self: start;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  line-height: 1;
+}
+
+.folder-watch-empty {
+  margin: 0;
+  padding: 10px 8px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 #addMenuBtn.folder-watch-on::after {
   content: "auto";
   margin-left: 0.35em;
@@ -738,6 +816,59 @@ h2 {
   grid-template-columns: auto auto 1fr;
 }
 
+.tree-item.tree-layout {
+  grid-template-columns: auto auto auto 1fr auto;
+}
+
+.tree-item.tree-layout.is-hidden .name {
+  opacity: 0.45;
+}
+
+.tree-vis {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tree-vis img {
+  width: 16px;
+  height: 16px;
+  display: block;
+  pointer-events: none;
+  opacity: 0.9;
+  object-fit: contain;
+  border-radius: 0;
+  background: transparent !important;
+  flex-shrink: 0;
+}
+
+.tree-vis:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tree-vis:hover img {
+  opacity: 1;
+  filter: brightness(1.25);
+}
+
+.tree-vis.is-off img {
+  opacity: 0.5;
+}
+
+.tree-vis.is-off:hover img {
+  opacity: 0.85;
+}
+
 .tree-item.active {
   border-color: var(--accent);
   background: #1a2a40;
@@ -774,7 +905,7 @@ h2 {
   cursor: default;
 }
 
-.tree-item img,
+.tree-item.tree-image > img,
 .tree-thumb {
   width: 28px;
   height: 28px;
