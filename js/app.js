@@ -76,6 +76,7 @@
   var FOLDER_HANDLES_IDB = "watchFolders";
   var FOLDER_HANDLE_IDB_LEGACY = "watchFolder";
   var SHOW_TREE_THUMBS_LS = "grid-designer-show-tree-thumbs";
+  var LAST_SEEN_VERSION_LS = "grid-designer-last-seen-version";
   var FOLDER_POLL_MS = 1000;
   var showTreeThumbs = true;
   /** @type {{ enabled: boolean, rules: Array<{id:string, folderName:string, targetLayoutId:string|null, handle: any}> }} */
@@ -3753,11 +3754,209 @@
   });
   window.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
+    var lb = $("whatsNewLightbox");
+    if (lb && !lb.hidden) {
+      e.preventDefault();
+      closeWhatsNewLightbox();
+      return;
+    }
+    var whatsNew = $("whatsNewModal");
+    if (whatsNew && !whatsNew.hidden) {
+      e.preventDefault();
+      dismissWhatsNew();
+      return;
+    }
     var modal = $("folderWatchModal");
     if (modal && !modal.hidden) {
       e.preventDefault();
       closeFolderWatchModal();
     }
+  });
+
+  var LAST_SEEN_FROM = null;
+
+  function parseVersionParts(v) {
+    return String(v || "0")
+      .split(".")
+      .map(function (p) { return parseInt(p, 10) || 0; });
+  }
+
+  function compareVersions(a, b) {
+    var pa = parseVersionParts(a);
+    var pb = parseVersionParts(b);
+    var n = Math.max(pa.length, pb.length);
+    for (var i = 0; i < n; i++) {
+      var da = pa[i] || 0;
+      var db = pb[i] || 0;
+      if (da !== db) return da < db ? -1 : 1;
+    }
+    return 0;
+  }
+
+  function getLastSeenVersion() {
+    try {
+      return localStorage.getItem(LAST_SEEN_VERSION_LS) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function setLastSeenVersion(v) {
+    try {
+      localStorage.setItem(LAST_SEEN_VERSION_LS, String(v || APP_VERSION));
+    } catch (e) { /* ignore */ }
+  }
+
+  function changelogEntriesSince(fromVersion) {
+    var log = (window.GC_CHANGELOG && typeof window.GC_CHANGELOG === "object")
+      ? window.GC_CHANGELOG
+      : {};
+    var keys = Object.keys(log).filter(function (v) {
+      if (compareVersions(v, APP_VERSION) > 0) return false;
+      if (!fromVersion) return compareVersions(v, APP_VERSION) === 0;
+      return compareVersions(v, fromVersion) > 0;
+    });
+    keys.sort(compareVersions);
+    return keys.map(function (v) {
+      var entry = log[v] || {};
+      var lang = I18N.getLang();
+      var lines = entry[lang] || entry.ko || entry.en || [];
+      return { version: v, lines: lines };
+    }).filter(function (block) {
+      return block.lines && block.lines.length;
+    });
+  }
+
+  /** Changelog line `![alt](relative/path.gif)` → image in What's New. */
+  function parseChangelogMedia(line) {
+    var m = String(line || "").trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (!m) return null;
+    var src = String(m[2] || "").trim();
+    if (!src) return null;
+    if (/^(https?:|data:|javascript:|file:)/i.test(src)) return null;
+    if (src.indexOf("..") >= 0 || src.charAt(0) === "/" || src.indexOf("\\") >= 0) return null;
+    return { alt: m[1] || "", src: src };
+  }
+
+  function fillWhatsNewModal() {
+    var lead = $("whatsNewLead");
+    var body = $("whatsNewBody");
+    if (!body) return;
+    var from = LAST_SEEN_FROM || "";
+    if (lead) {
+      lead.textContent = from
+        ? t("whatsNewLeadFrom", { from: from, version: APP_VERSION })
+        : t("whatsNewLead", { version: APP_VERSION });
+    }
+    body.replaceChildren();
+    var blocks = changelogEntriesSince(from);
+    if (!blocks.length) {
+      var empty = document.createElement("p");
+      empty.className = "muted modal-desc";
+      empty.textContent = t("whatsNewLead", { version: APP_VERSION });
+      body.appendChild(empty);
+      return;
+    }
+    blocks.forEach(function (block) {
+      var section = document.createElement("section");
+      var ver = document.createElement("h3");
+      ver.className = "whats-new-ver";
+      ver.textContent = "v" + block.version;
+      var ul = document.createElement("ul");
+      ul.className = "whats-new-list";
+      block.lines.forEach(function (line) {
+        var li = document.createElement("li");
+        var media = parseChangelogMedia(line);
+        if (media) {
+          li.className = "whats-new-media";
+          var img = document.createElement("img");
+          img.src = media.src;
+          img.alt = media.alt || "";
+          img.title = t("whatsNewImageZoom");
+          img.loading = "lazy";
+          img.decoding = "async";
+          img.style.cursor = "zoom-in";
+          img.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            openWhatsNewLightbox(media.src, media.alt || "");
+          });
+          li.appendChild(img);
+        } else {
+          li.textContent = line;
+        }
+        ul.appendChild(li);
+      });
+      section.append(ver, ul);
+      body.appendChild(section);
+    });
+  }
+
+  function openWhatsNewModal(fromVersion) {
+    LAST_SEEN_FROM = fromVersion || "";
+    fillWhatsNewModal();
+    var modal = $("whatsNewModal");
+    if (modal) modal.hidden = false;
+  }
+
+  function dismissWhatsNew() {
+    closeWhatsNewLightbox();
+    setLastSeenVersion(APP_VERSION);
+    LAST_SEEN_FROM = null;
+    var modal = $("whatsNewModal");
+    if (modal) modal.hidden = true;
+  }
+
+  function closeWhatsNewLightbox() {
+    var box = $("whatsNewLightbox");
+    var img = $("whatsNewLightboxImg");
+    if (img) {
+      img.removeAttribute("src");
+      img.alt = "";
+    }
+    if (box) box.hidden = true;
+  }
+
+  function openWhatsNewLightbox(src, alt) {
+    var box = $("whatsNewLightbox");
+    var img = $("whatsNewLightboxImg");
+    if (!box || !img || !src) return;
+    img.src = src;
+    img.alt = alt || "";
+    var closeBtn = box.querySelector(".whats-new-lightbox-close");
+    if (closeBtn) closeBtn.setAttribute("aria-label", t("whatsNewLightboxClose"));
+    box.hidden = false;
+  }
+
+  function maybeShowWhatsNew() {
+    var force = false;
+    try {
+      force = /(?:\?|&)whatsnew=1(?:&|$)/.test(String(location.search || ""));
+    } catch (eForce) { /* ignore */ }
+    var last = getLastSeenVersion();
+    // First visit: remember version only — no update dialog.
+    if (!force && !last) {
+      setLastSeenVersion(APP_VERSION);
+      return;
+    }
+    if (!force && last === APP_VERSION) return;
+    var blocks = changelogEntriesSince(force ? "" : last);
+    if (!blocks.length) {
+      if (!force) setLastSeenVersion(APP_VERSION);
+      return;
+    }
+    openWhatsNewModal(force ? (last && last !== APP_VERSION ? last : "") : last);
+  }
+
+  document.querySelectorAll("[data-whats-new-close]").forEach(function (node) {
+    node.addEventListener("click", dismissWhatsNew);
+  });
+  document.querySelectorAll("[data-whats-new-lightbox-close]").forEach(function (node) {
+    node.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeWhatsNewLightbox();
+    });
   });
 
   var formKeys = [
@@ -3979,6 +4178,10 @@
     if (modal && !modal.hidden) {
       renderFolderWatchRuleList();
     }
+    var whatsNew = $("whatsNewModal");
+    if (whatsNew && !whatsNew.hidden) {
+      fillWhatsNewModal();
+    }
     var statusKey = I18N.findKeyByText(el.status.textContent);
     if (statusKey) {
       var kind = el.status.classList.contains("ok")
@@ -4025,4 +4228,5 @@
     }).catch(function () {});
   }
   status(t("statusReady"));
+  maybeShowWhatsNew();
 })();

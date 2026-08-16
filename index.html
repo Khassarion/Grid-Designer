@@ -258,6 +258,31 @@
 
     <canvas id="exportCanvas" hidden></canvas>
 
+    <div id="whatsNewModal" class="modal" hidden>
+      <div class="modal-backdrop" data-whats-new-close></div>
+      <div class="modal-panel modal-panel-whats-new" role="dialog" aria-modal="true" aria-labelledby="whatsNewTitle">
+        <div class="modal-head">
+          <h2 id="whatsNewTitle" data-i18n="whatsNewTitle">업데이트 안내</h2>
+          <button type="button" class="modal-close" data-whats-new-close aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+          <p id="whatsNewLead" class="muted modal-desc"></p>
+          <div id="whatsNewBody" class="whats-new-body"></div>
+        </div>
+        <div class="modal-foot">
+          <button id="whatsNewOkBtn" class="primary" type="button" data-whats-new-close data-i18n="whatsNewOk">확인</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="whatsNewLightbox" class="whats-new-lightbox" hidden>
+      <div class="whats-new-lightbox-backdrop" data-whats-new-lightbox-close></div>
+      <button type="button" class="whats-new-lightbox-close" data-whats-new-lightbox-close aria-label="Close">×</button>
+      <div class="whats-new-lightbox-stage">
+        <img id="whatsNewLightboxImg" alt="" />
+      </div>
+    </div>
+
     <div id="folderWatchModal" class="modal" hidden>
       <div class="modal-backdrop" data-folder-watch-close></div>
       <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="folderWatchModalTitle">
