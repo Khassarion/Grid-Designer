@@ -49,7 +49,7 @@
   var imageSel = [];
   /** Shift-click range anchor for image multi-select */
   var imageSelAnchor = null;
-  /** Sibling reorder / preview reparent drag: { parentId, index } */
+  /** Sibling reorder / preview reparent drag: { parentId, index, refs? } */
   var childDrag = null;
   /** Collapsed layout ids in hierarchy tree */
   var collapsed = {};
@@ -868,6 +868,7 @@
 
   function draggedImageRefs() {
     if (!childDrag) return null;
+    if (childDrag.refs && childDrag.refs.length) return childDrag.refs.slice();
     var parent = layouts[childDrag.parentId];
     var ch = parent && parent.children[childDrag.index];
     if (!ch || ch.type !== "image") return null;
@@ -906,7 +907,8 @@
       var ch = p && p.children[r.index];
       if (!ch || ch.type !== "image") return;
       if (r.parentId === toParentId) return;
-      var key = ch.refId || (r.parentId + ":" + r.index);
+      // Slot identity — duplicates may share the same image refId.
+      var key = r.parentId + ":" + r.index;
       if (seen[key]) return;
       seen[key] = true;
       ordered.push({ parentId: r.parentId, child: ch });
@@ -959,7 +961,13 @@
         renderTree();
         refreshPreview();
       }
-      childDrag = { parentId: parentId, index: index };
+      var refs = null;
+      if (ch && ch.type === "image") {
+        refs = (isImageSelected(parentId, index) && imageSel.length > 0)
+          ? imageSel.slice()
+          : [{ parentId: parentId, index: index }];
+      }
+      childDrag = { parentId: parentId, index: index, refs: refs };
       li.classList.add("dragging");
       if (e.dataTransfer) {
         e.dataTransfer.effectAllowed = "move";
