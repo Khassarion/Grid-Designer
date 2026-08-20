@@ -3,11 +3,11 @@
 브라우저에서 이미지를 격자·중첩 레이아웃으로 배치하고 **PNG**로 내보내는 정적 웹 에디터입니다.  
 서버·설치·빌드 없이 `index.html`만 열면 동작합니다.
 
-**현재 버전:** `1.1.2.0` · 소스: [`js/version.js`](js/version.js)
+**현재 버전:** `1.1.2.2` · 소스: [`js/version.js`](js/version.js)
 
-**사용:** [https://ainukehere.github.io/Grid-Designer](https://ainukehere.github.io/Grid-Designer)
+**사용:** [https://khassarion.github.io/Grid-Designer](https://khassarion.github.io/Grid-Designer)
 
-**튜토리얼 (후원 이미지 벽지):** [tutorial.html](tutorial.html) · [배포본](https://ainukehere.github.io/Grid-Designer/tutorial.html)
+**튜토리얼 (후원 이미지 벽지):** [tutorial.html](tutorial.html) · [배포본](https://khassarion.github.io/Grid-Designer/tutorial.html)
 
 ---
 
@@ -15,6 +15,9 @@
 
 버전은 `MAJOR.MINOR.PATCH.BUILD` 형식입니다.  
 앱 릴리즈 버전(`js/version.js`)과 구조 JSON의 `version` 필드(`PROJECT_VERSION`)는 별개입니다.
+### v1.1.2.2 - 2026-08-20
+- 저장소 소유자 변경으로 사이트 주소가 변경되었습니다.
+
 
 ### v1.1.2.1 — 2026-08-16
 - 버전 업데이트 시 **업데이트 안내** 창 표시 (이전에 본 버전은 브라우저에 저장)
@@ -180,4 +183,4 @@ icons/                         # favicon 등
 소스 공개(Source-Available)이며, 개인·비상업적 사용만 허용됩니다.
 
 상업적 이용, 재배포, 타 서비스·플랫폼에의 통합·복제·이식은 [LICENSE](LICENSE)로 금지됩니다.  
-상업 이용·제휴 문의: `iii4625@naver.com`
+상업 이용·제휴 문의: `khassarion@gamil.com`

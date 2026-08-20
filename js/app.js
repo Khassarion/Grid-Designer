@@ -1,7 +1,7 @@
 /**
  * Grid Designer — canvas (scene) + nested layouts → PNG
  *
- * Copyright (c) 2026 AINukeHere
+ * Copyright (c) 2026 Khassarion
  * SPDX-License-Identifier: LicenseRef-GridDesigner-Proprietary
  *
  * Canvas = free container (like scene). No grid.

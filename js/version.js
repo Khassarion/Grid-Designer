@@ -1,7 +1,7 @@
 /**
  * Grid Designer — app release version (MAJOR.MINOR.PATCH.BUILD)
  *
- * Copyright (c) 2026 AINukeHere
+ * Copyright (c) 2026 Khassarion
  * SPDX-License-Identifier: LicenseRef-GridDesigner-Proprietary
  *
  * Bump GC_APP_VERSION when shipping user-visible changes.
@@ -12,9 +12,21 @@
  */
 (function (global) {
   "use strict";
-  global.GC_APP_VERSION = "1.1.2.1";
+  global.GC_APP_VERSION = "1.1.2.2";
   /** Per-version release notes for the in-app update dialog. */
   global.GC_CHANGELOG = {
+    "1.1.2.2": {
+      ko: [
+        "사이트 주소가 변경되었습니다.",
+        "기존: https://ainukehere.github.io/Grid-Designer",
+        "변경: https://khassarion.github.io/Grid-Designer",
+      ],
+      en: [
+        "Site address has changed.",
+        "Old: https://ainukehere.github.io/Grid-Designer",
+        "New: https://khassarion.github.io/Grid-Designer",
+      ],
+    },
     "1.1.2.1": {
       ko: [
         "Ctrl+레이아웃 크기 조절: 드래그 중에는 내용이 함께 줄어든 것처럼 미리보고, 마우스를 떼면 셀·패딩 크기를 확정합니다.",

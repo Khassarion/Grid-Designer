@@ -1,7 +1,7 @@
 /**
  * Grid Designer — UI strings (ko / en)
  *
- * Copyright (c) 2026 AINukeHere
+ * Copyright (c) 2026 Khassarion
  * SPDX-License-Identifier: LicenseRef-GridDesigner-Proprietary
  */
 (function (global) {
