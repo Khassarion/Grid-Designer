@@ -19,12 +19,12 @@
     "1.1.2.3": {
       date: "2026-10-03",
       ko: [
-        "프로젝트를 열거나 저장한 위치가 \"마지막 작업 프로젝트\"로 기억되어, 다음에 페이지를 열 때 자동으로 다시 불러옵니다 (Chrome/Edge).",
-        "PNG로 내보낼 때 좌상단 구석에 아주 작은 프로그램명·버전 워터마크가 내보내기마다 번갈아 찍힙니다 (이미지보다 항상 위에 그려짐).",
+        "사이트를 재방문했을 때 마지막으로 열거나 저장한 프로젝트를 자동으로 불러옵니다 (Chrome/Edge).",
+        "캔버스가 수정될 때 PNG 좌상단에 한 번씩 프로그램명·버전이 5초 동안 표시되곤 합니다.",
       ],
       en: [
-        "Opening or saving a layout file now remembers that location as your \"last worked project\" and reopens it automatically the next time you load the page (Chrome/Edge).",
-        "PNG exports now stamp a tiny app name + version watermark in the top-left corner, alternating on/off each export, always drawn above the images.",
+        "When you revisit the site, it automatically loads the last project you opened or saved (Chrome/Edge).",
+        "Each time the canvas changes, the exported PNG briefly shows the app name + version in the top-left corner for about 5 seconds.",
       ],
     },
     "1.1.2.2": {

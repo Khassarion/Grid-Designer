@@ -2432,7 +2432,8 @@
     var ctx = el.canvas.getContext("2d");
     ctx.clearRect(0, 0, s.w, s.h);
     draw(ctx, canvasId, 0, 0, 0);
-    drawExportWatermark(ctx);
+    if (drawExportWatermark(ctx)) scheduleWatermarkClear(exportPng);
+    else cancelWatermarkClear();
     el.canvas.toBlob(function (blob) {
       if (!blob) return status(t("pngFail"), "err");
       savePng(blob).then(function (name) {
@@ -2484,7 +2485,8 @@
     var ctx = el.canvas.getContext("2d");
     ctx.clearRect(0, 0, s.w, s.h);
     draw(ctx, canvasId, 0, 0, 0);
-    drawExportWatermark(ctx);
+    if (drawExportWatermark(ctx)) scheduleWatermarkClear(runAutoExport);
+    else cancelWatermarkClear();
     el.canvas.toBlob(function (blob) {
       if (!blob) {
         autoExportBusy = false;
@@ -2521,10 +2523,11 @@
 
   // Toggles on/off each export (manual + auto) so it's not a permanent fixture
   // in every exported frame. Must run after draw() so images never cover it.
+  // Returns whether the watermark was drawn this time.
   var exportWatermarkOn = false;
   function drawExportWatermark(ctx) {
     exportWatermarkOn = !exportWatermarkOn;
-    if (!exportWatermarkOn) return;
+    if (!exportWatermarkOn) return false;
     var label = "Grid Designer v" + APP_VERSION;
     ctx.save();
     ctx.font = "5px sans-serif";
@@ -2537,6 +2540,26 @@
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.fillText(label, 2, 2);
     ctx.restore();
+    return true;
+  }
+
+  // When a watermarked frame gets exported, schedule a clean re-export 5s
+  // later so OBS doesn't keep showing the watermark indefinitely. A later
+  // export that comes out clean (watermark off) cancels the pending one —
+  // it already did the "clear" job itself.
+  var watermarkClearTimer = null;
+  function cancelWatermarkClear() {
+    if (watermarkClearTimer) {
+      clearTimeout(watermarkClearTimer);
+      watermarkClearTimer = null;
+    }
+  }
+  function scheduleWatermarkClear(reexport) {
+    cancelWatermarkClear();
+    watermarkClearTimer = setTimeout(function () {
+      watermarkClearTimer = null;
+      reexport();
+    }, 5000);
   }
 
   function cloneLayoutsMap(src) {
