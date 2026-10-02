@@ -11,7 +11,7 @@
 | 항목 | 값 |
 |------|-----|
 | 제품명 | Grid Designer |
-| 앱 버전 | `js/version.js` → `GC_APP_VERSION` (현재 README 기준 **1.1.2.2**) |
+| 앱 버전 | `js/version.js` → `GC_APP_VERSION` (현재 README 기준 **1.1.2.3**) |
 | GitHub Pages | https://khassarion.github.io/Grid-Designer |
 | 라이선스 | **비오픈소스** (Source-Available, 개인·비상업). [LICENSE](LICENSE) |
 

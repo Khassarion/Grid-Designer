@@ -3,7 +3,7 @@
 브라우저에서 이미지를 격자·중첩 레이아웃으로 배치하고 **PNG**로 내보내는 정적 웹 에디터입니다.  
 서버·설치·빌드 없이 `index.html`만 열면 동작합니다.
 
-**현재 버전:** `1.1.2.2` · 소스: [`js/version.js`](js/version.js)
+**현재 버전:** `1.1.2.3` · 소스: [`js/version.js`](js/version.js)
 
 **사용:** [https://khassarion.github.io/Grid-Designer](https://khassarion.github.io/Grid-Designer)
 
@@ -15,6 +15,11 @@
 
 버전은 `MAJOR.MINOR.PATCH.BUILD` 형식입니다.  
 앱 릴리즈 버전(`js/version.js`)과 구조 JSON의 `version` 필드(`PROJECT_VERSION`)는 별개입니다.
+### v1.1.2.3 - 2026-10-03
+- 계층 구조를 열면 그 파일이 기억되어, 다음에 페이지를 열 때 자동으로 다시 불러옵니다 (Chrome/Edge).
+- 계층 구조 저장이 매번 새 파일을 받지 않고 같은 파일에 덮어쓰도록 바뀌어, 자동 재열기 대상도 항상 최신 내용을 가리킵니다.
+- PNG로 내보낼 때 좌상단 구석에 아주 작은 프로그램명·버전 워터마크가 내보내기마다 번갈아 찍힙니다 (이미지보다 항상 위에 그려짐).
+
 ### v1.1.2.2 - 2026-08-20
 - 저장소 소유자 변경으로 사이트 주소가 변경되었습니다.
 
