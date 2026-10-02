@@ -55,6 +55,8 @@
   var collapsed = {};
   var maxZ = 1;
   var pngHandle = null;
+  /** Last project JSON file opened via the File System Access picker — reopened on page load. */
+  var projectHandle = null;
   var zoom = 1;
   var drag = null;
   var snapEnabled = true;
@@ -2910,25 +2912,68 @@
     });
   }
 
+  function pickProjectSave() {
+    return window.showSaveFilePicker({
+      suggestedName: "grid-designer-structure.json",
+      types: [{ description: "Grid Designer JSON", accept: { "application/json": [".json"] } }],
+    });
+  }
+
+  function ensureProjectWritePermission(handle) {
+    if (!handle || !handle.queryPermission) return Promise.resolve(false);
+    return handle.queryPermission({ mode: "readwrite" }).then(function (st) {
+      if (st === "granted") return true;
+      if (!handle.requestPermission) return false;
+      return handle.requestPermission({ mode: "readwrite" }).then(function (n) {
+        return n === "granted";
+      }).catch(function () { return false; });
+    }).catch(function () { return false; });
+  }
+
+  function writeProjectBlobTo(handle, blob) {
+    return handle.createWritable().then(function (w) {
+      return w.write(blob).then(function () { return w.close(); });
+    });
+  }
+
   function saveProject() {
     var includeImages = !!( $("saveWithImages") && $("saveWithImages").checked );
     status(includeImages ? t("savingWithImages") : t("savingStructure"));
     buildProject(includeImages).then(function (project) {
-      downloadJson(project, "grid-designer-structure.json");
       persistFolderHandles().catch(function () {});
       var nLay = Object.keys(project.layouts).length;
       var nImg = Object.keys(project.images).length;
-      if (includeImages) {
-        status(t("savedWithImages", { nLay: nLay, nImg: nImg }), "ok");
-      } else {
-        status(t("savedNoImages", { nLay: nLay }), "ok");
+      function reportOk() {
+        if (includeImages) status(t("savedWithImages", { nLay: nLay, nImg: nImg }), "ok");
+        else status(t("savedNoImages", { nLay: nLay }), "ok");
       }
+      if (typeof window.showSaveFilePicker !== "function") {
+        // No File System Access API (e.g. Firefox) — plain download, can't be
+        // reopened automatically next visit.
+        downloadJson(project, "grid-designer-structure.json");
+        reportOk();
+        return;
+      }
+      var blob = new Blob([JSON.stringify(project)], { type: "application/json" });
+      // Overwrite the file already open/saved (like PNG auto-export) so the
+      // handle remembered for next page load always matches the latest save.
+      ensureProjectWritePermission(projectHandle).then(function (ok) {
+        if (ok) return writeProjectBlobTo(projectHandle, blob);
+        return pickProjectSave().then(function (h) {
+          projectHandle = h;
+          return writeProjectBlobTo(h, blob);
+        });
+      }).then(function () {
+        return idb("put", "project", projectHandle).catch(function () {});
+      }).then(reportOk).catch(function (e) {
+        if (e && e.name !== "AbortError") status(String((e && e.message) || e), "err");
+      });
     }).catch(function (e) {
       status(String((e && e.message) || e), "err");
     });
   }
 
-  function loadProjectFromFile(file) {
+  function loadProjectFromFile(file, handle) {
     if (!file) return;
     var reader = new FileReader();
     reader.onload = function () {
@@ -2949,6 +2994,11 @@
           status(t("loaded", { nLay: nLay, nImg: nImg }), "ok");
           if (fwNote === "permission") status(t("folderWatchPermission"), "err");
           else if (fwNote === "relink") status(t("folderWatchRelink"), "err");
+          // Remember this handle so the next page load can reopen it automatically.
+          if (handle) {
+            projectHandle = handle;
+            idb("put", "project", handle).catch(function () {});
+          }
         }).catch(function (e) {
           status(String((e && e.message) || e), "err");
         });
@@ -4105,6 +4155,23 @@
     loadProjectFromFile($("projectInput").files && $("projectInput").files[0]);
     $("projectInput").value = "";
   };
+  // Prefer the handle-based picker so this file can be reopened automatically
+  // on the next page load (see idb("get", "project") at boot, below).
+  var openProjectLabelEl = $("openProjectLabel");
+  if (openProjectLabelEl && typeof window.showOpenFilePicker === "function") {
+    openProjectLabelEl.addEventListener("click", function (e) {
+      e.preventDefault();
+      window.showOpenFilePicker({
+        types: [{ description: "Grid Designer JSON", accept: { "application/json": [".json"] } }],
+      }).then(function (handles) {
+        return handles[0].getFile().then(function (file) {
+          loadProjectFromFile(file, handles[0]);
+        });
+      }).catch(function (e) {
+        if (!e || e.name !== "AbortError") status(String((e && e.message) || e), "err");
+      });
+    });
+  }
 
   $("exportPngBtn").onclick = exportPng;
   $("changePngPathBtn").onclick = function () {
@@ -4255,6 +4322,21 @@
     idb("get", "png").then(function (h) {
       pngHandle = h;
       refreshPngPathLabel();
+    }).catch(function () {});
+  }
+  if (typeof window.showOpenFilePicker === "function") {
+    // Reopen the last project file automatically — but only if the browser
+    // already granted read access without a fresh user gesture (no picker
+    // prompt at boot). Canvas is still empty here, so importProject() will
+    // not hit the "overwrite existing work?" confirm.
+    idb("get", "project").then(function (h) {
+      if (!h) return;
+      return h.queryPermission({ mode: "read" }).then(function (st) {
+        if (st !== "granted") return;
+        return h.getFile().then(function (file) {
+          loadProjectFromFile(file, h);
+        });
+      });
     }).catch(function () {});
   }
   status(t("statusReady"));
