@@ -138,7 +138,7 @@ icons/              favicon, eye/eye-off SVG
 | `grid-composer-folder-seen` | 이미 처리한 파일명 |
 | `grid-composer-tree-thumbs` | 계층 썸네일 표시 |
 | `grid-composer-last-seen-version` | 업데이트 안내 |
-| IndexedDB `obs-grid-designer` | PNG handle, watch folder handle(s) |
+| IndexedDB `obs-grid-designer` | PNG handle, watch folder handle(s), **project handle** (key `"project"`) |
 
 ---
 
@@ -162,6 +162,7 @@ icons/              favicon, eye/eye-off SVG
 - 폴더 감시 주기 1s / debounce 200ms
 - Ctrl+D: `t` 변수 shadowing 수정 + 복제 후 `refresh()` + auto export
 - 계층 다중 선택 → 미리보기 레이아웃 drop: **전체 이동** (refId dedupe 제거)
+- **마지막 작업 프로젝트 자동 재열기** (1.1.2.3): 열기(`showOpenFilePicker`)·저장(`showSaveFilePicker`) 둘 다 핸들을 `projectHandle`에 두고 IndexedDB `"project"` 키에 저장. 저장은 **항상** 위치를 물음 — 자동 덮어쓰기가 아님. 부팅 시 `queryPermission({mode:"read"})`이 이미 `"granted"`일 때만(사용자 제스처 없이) 조용히 다시 읽어 `importProject()`. 미지원 브라우저는 기존 `<input type=file>`/다운로드로 폴백
 - 추가 드롭다운 / file input DOM 정리
 
 ---

@@ -2919,17 +2919,6 @@
     });
   }
 
-  function ensureProjectWritePermission(handle) {
-    if (!handle || !handle.queryPermission) return Promise.resolve(false);
-    return handle.queryPermission({ mode: "readwrite" }).then(function (st) {
-      if (st === "granted") return true;
-      if (!handle.requestPermission) return false;
-      return handle.requestPermission({ mode: "readwrite" }).then(function (n) {
-        return n === "granted";
-      }).catch(function () { return false; });
-    }).catch(function () { return false; });
-  }
-
   function writeProjectBlobTo(handle, blob) {
     return handle.createWritable().then(function (w) {
       return w.write(blob).then(function () { return w.close(); });
@@ -2955,16 +2944,13 @@
         return;
       }
       var blob = new Blob([JSON.stringify(project)], { type: "application/json" });
-      // Overwrite the file already open/saved (like PNG auto-export) so the
-      // handle remembered for next page load always matches the latest save.
-      ensureProjectWritePermission(projectHandle).then(function (ok) {
-        if (ok) return writeProjectBlobTo(projectHandle, blob);
-        return pickProjectSave().then(function (h) {
+      // Always ask where to save — but whatever location is picked becomes
+      // the "last worked project", reopened automatically on the next load.
+      pickProjectSave().then(function (h) {
+        return writeProjectBlobTo(h, blob).then(function () {
           projectHandle = h;
-          return writeProjectBlobTo(h, blob);
+          return idb("put", "project", h).catch(function () {});
         });
-      }).then(function () {
-        return idb("put", "project", projectHandle).catch(function () {});
       }).then(reportOk).catch(function (e) {
         if (e && e.name !== "AbortError") status(String((e && e.message) || e), "err");
       });

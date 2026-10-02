@@ -17,13 +17,11 @@
   global.GC_CHANGELOG = {
     "1.1.2.3": {
       ko: [
-        "계층 구조를 열면 그 파일이 기억되어, 다음에 페이지를 열 때 자동으로 다시 불러옵니다 (Chrome/Edge).",
-        "계층 구조 저장이 매번 새 파일을 받지 않고 같은 파일에 덮어쓰도록 바뀌어, 자동 재열기 대상도 항상 최신 내용을 가리킵니다.",
+        "계층 구조를 열거나 저장한 위치가 \"마지막 작업 프로젝트\"로 기억되어, 다음에 페이지를 열 때 자동으로 다시 불러옵니다 (Chrome/Edge). 저장은 여전히 매번 위치를 선택합니다.",
         "PNG로 내보낼 때 좌상단 구석에 아주 작은 프로그램명·버전 워터마크가 내보내기마다 번갈아 찍힙니다 (이미지보다 항상 위에 그려짐).",
       ],
       en: [
-        "Opening a layout file is now remembered and reopened automatically the next time you load the page (Chrome/Edge).",
-        "Saving the layout now overwrites the same file instead of downloading a new one each time, so the auto-reopened file always matches your latest save.",
+        "Opening or saving a layout file now remembers that location as your \"last worked project\" and reopens it automatically the next time you load the page (Chrome/Edge). Saving still always asks where to save.",
         "PNG exports now stamp a tiny app name + version watermark in the top-left corner, alternating on/off each export, always drawn above the images.",
       ],
     },
