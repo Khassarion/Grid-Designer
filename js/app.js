@@ -2430,6 +2430,7 @@
     var ctx = el.canvas.getContext("2d");
     ctx.clearRect(0, 0, s.w, s.h);
     draw(ctx, canvasId, 0, 0, 0);
+    drawExportWatermark(ctx);
     el.canvas.toBlob(function (blob) {
       if (!blob) return status(t("pngFail"), "err");
       savePng(blob).then(function (name) {
@@ -2481,6 +2482,7 @@
     var ctx = el.canvas.getContext("2d");
     ctx.clearRect(0, 0, s.w, s.h);
     draw(ctx, canvasId, 0, 0, 0);
+    drawExportWatermark(ctx);
     el.canvas.toBlob(function (blob) {
       if (!blob) {
         autoExportBusy = false;
@@ -2505,6 +2507,26 @@
   /** JSON project file format — not the app release version (see js/version.js). */
   var PROJECT_VERSION = 1;
   var APP_VERSION = (window.GC_APP_VERSION && String(window.GC_APP_VERSION)) || "0.0.0";
+
+  // Toggles on/off each export (manual + auto) so it's not a permanent fixture
+  // in every exported frame. Must run after draw() so images never cover it.
+  var exportWatermarkOn = false;
+  function drawExportWatermark(ctx) {
+    exportWatermarkOn = !exportWatermarkOn;
+    if (!exportWatermarkOn) return;
+    var label = "Grid Designer v" + APP_VERSION;
+    ctx.save();
+    ctx.font = "5px sans-serif";
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    ctx.lineWidth = 1;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.strokeText(label, 2, 2);
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillText(label, 2, 2);
+    ctx.restore();
+  }
 
   function cloneLayoutsMap(src) {
     var out = {};
