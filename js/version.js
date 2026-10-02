@@ -5,7 +5,8 @@
  * SPDX-License-Identifier: LicenseRef-GridDesigner-Proprietary
  *
  * Bump GC_APP_VERSION when shipping user-visible changes.
- * Add matching GC_CHANGELOG[version] entries (ko/en) for the What's New dialog.
+ * Add matching GC_CHANGELOG[version] entries (date + ko/en) for the What's New dialog.
+ * `date` is the release date (YYYY-MM-DD) — shown next to the version everywhere it's displayed.
  * Image lines: ![alt text](screenshots/example.gif) — relative path only.
  * Keep in sync with README changelog.
  * Distinct from PROJECT_VERSION in app.js (JSON project file format).
@@ -16,6 +17,7 @@
   /** Per-version release notes for the in-app update dialog. */
   global.GC_CHANGELOG = {
     "1.1.2.3": {
+      date: "2026-10-03",
       ko: [
         "계층 구조를 열거나 저장한 위치가 \"마지막 작업 프로젝트\"로 기억되어, 다음에 페이지를 열 때 자동으로 다시 불러옵니다 (Chrome/Edge). 저장은 여전히 매번 위치를 선택합니다.",
         "PNG로 내보낼 때 좌상단 구석에 아주 작은 프로그램명·버전 워터마크가 내보내기마다 번갈아 찍힙니다 (이미지보다 항상 위에 그려짐).",
@@ -26,6 +28,7 @@
       ],
     },
     "1.1.2.2": {
+      date: "2026-08-20",
       ko: [
         "사이트 주소가 변경되었습니다.",
         "기존: https://ainukehere.github.io/Grid-Designer",
@@ -38,6 +41,7 @@
       ],
     },
     "1.1.2.1": {
+      date: "2026-08-16",
       ko: [
         "Ctrl+레이아웃 크기 조절: 드래그 중에는 내용이 함께 줄어든 것처럼 미리보고, 마우스를 떼면 셀·패딩 크기를 확정합니다.",
         "![Ctrl로 레이아웃 크기 조절](screenshots/ctrl-layout-resize.gif)",

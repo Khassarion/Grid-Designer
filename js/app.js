@@ -2510,6 +2510,15 @@
   var PROJECT_VERSION = 1;
   var APP_VERSION = (window.GC_APP_VERSION && String(window.GC_APP_VERSION)) || "0.0.0";
 
+  /** "2026-10-03" -> " (2026.10.03)", or "" if that version has no recorded date. */
+  function versionDateSuffix(version) {
+    var log = (window.GC_CHANGELOG && typeof window.GC_CHANGELOG === "object") ? window.GC_CHANGELOG : {};
+    var entry = log[version];
+    var date = entry && entry.date;
+    if (!date) return "";
+    return " (" + String(date).replace(/-/g, ".") + ")";
+  }
+
   // Toggles on/off each export (manual + auto) so it's not a permanent fixture
   // in every exported frame. Must run after draw() so images never cover it.
   var exportWatermarkOn = false;
@@ -3927,7 +3936,7 @@
       var section = document.createElement("section");
       var ver = document.createElement("h3");
       ver.className = "whats-new-ver";
-      ver.textContent = "v" + block.version;
+      ver.textContent = "v" + block.version + versionDateSuffix(block.version);
       var ul = document.createElement("ul");
       ul.className = "whats-new-list";
       block.lines.forEach(function (line) {
@@ -4285,7 +4294,7 @@
   I18N.onChange(applyLanguageUi);
 
   var appVerEl = $("appVersion");
-  if (appVerEl) appVerEl.textContent = "v" + APP_VERSION;
+  if (appVerEl) appVerEl.textContent = "v" + APP_VERSION + versionDateSuffix(APP_VERSION);
 
   if (el.tree) {
     el.tree.addEventListener("scroll", rememberTreeScroll, { passive: true });
