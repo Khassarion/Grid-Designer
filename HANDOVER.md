@@ -11,7 +11,7 @@
 | 항목 | 값 |
 |------|-----|
 | 제품명 | Grid Designer |
-| 앱 버전 | `js/version.js` → `GC_APP_VERSION` (현재 README 기준 **1.1.2.3**) |
+| 앱 버전 | `js/version.js` → `GC_APP_VERSION` (현재 README 기준 **1.1.2.4**) |
 | GitHub Pages | https://khassarion.github.io/Grid-Designer |
 | 라이선스 | **비오픈소스** (Source-Available, 개인·비상업). [LICENSE](LICENSE) |
 
@@ -163,6 +163,7 @@ icons/              favicon, eye/eye-off SVG
 - Ctrl+D: `t` 변수 shadowing 수정 + 복제 후 `refresh()` + auto export
 - 계층 다중 선택 → 미리보기 레이아웃 drop: **전체 이동** (refId dedupe 제거)
 - **마지막 작업 프로젝트 자동 재열기** (1.1.2.3): 열기(`showOpenFilePicker`)·저장(`showSaveFilePicker`) 둘 다 핸들을 `projectHandle`에 두고 IndexedDB `"project"` 키에 저장. 저장은 **항상** 위치를 물음 — 자동 덮어쓰기가 아님. 부팅 시 `queryPermission({mode:"read"})`이 이미 `"granted"`일 때만(사용자 제스처 없이) 조용히 다시 읽어 `importProject()`. 미지원 브라우저는 기존 `<input type=file>`/다운로드로 폴백
+- **방향키 nudge** (1.1.2.4): `getNudgeableFrameChild()` — `previewSel`이 가리키는 child가 `isInteractiveChild()`(캔버스 직속 이미지 또는 임의 깊이의 레이아웃 프레임)를 만족할 때만 방향키로 `frame.x/y` ±1px(Shift ±10px) 이동. 레이아웃 그리드 안의 이미지는 frame이 `reflow()`로 계산되므로 대상 아님. undo는 `e.repeat`로 세션 단위 1회만 push(눌린 채로 반복돼도 한 번의 되돌리기로 복원)
 - 추가 드롭다운 / file input DOM 정리
 
 ---

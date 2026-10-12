@@ -13,9 +13,20 @@
  */
 (function (global) {
   "use strict";
-  global.GC_APP_VERSION = "1.1.2.3";
+  global.GC_APP_VERSION = "1.1.2.4";
   /** Per-version release notes for the in-app update dialog. */
   global.GC_CHANGELOG = {
+    "1.1.2.4": {
+      date: "2026-10-12",
+      ko: [
+        "이미지나 레이아웃을 선택한 뒤 방향키로 1px씩 세밀하게 이동할 수 있습니다. Shift+방향키는 10px씩 이동합니다.",
+        "![방향키로 이동](screenshots/move-by-arrow-key.gif)",
+      ],
+      en: [
+        "After selecting a canvas image or layout frame, use the arrow keys to nudge it 1px at a time. Shift+arrow moves it 10px at a time.",
+        "![방향키로 이동](screenshots/move-by-arrow-key.gif)",
+      ],
+    },
     "1.1.2.3": {
       date: "2026-10-03",
       ko: [

@@ -272,6 +272,16 @@
     return ch.type === "image" && parentId === canvasId;
   }
 
+  /** The child currently frame-selected in the preview (move/resize handles shown), if any. */
+  function getNudgeableFrameChild() {
+    if (!previewSel || previewSel.index < 0 || !previewSel.parentId) return null;
+    var parent = layouts[previewSel.parentId];
+    var ch = parent && parent.children[previewSel.index];
+    if (!ch || !ch.frame) return null;
+    if (!isInteractiveChild(previewSel.parentId, ch)) return null;
+    return ch;
+  }
+
   function syncSizeFromParent(L) {
     if (!L || !isSizeLocked(L.id)) return;
     var parent = layouts[L.parentId];
@@ -4237,6 +4247,22 @@
       return;
     }
     if (isTypingTarget(e.target)) return;
+    var arrowDelta = {
+      ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+    }[e.key];
+    if (arrowDelta) {
+      var nudgeCh = getNudgeableFrameChild();
+      if (nudgeCh) {
+        e.preventDefault();
+        if (!e.repeat) pushUndo();
+        var step = e.shiftKey ? 10 : 1;
+        nudgeCh.frame.x += arrowDelta[0] * step;
+        nudgeCh.frame.y += arrowDelta[1] * step;
+        refreshPreview();
+        requestAutoExport(true);
+        return;
+      }
+    }
     if (e.key === "Delete") {
       e.preventDefault();
       removeSelected();
